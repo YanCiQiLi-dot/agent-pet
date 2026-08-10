@@ -1,0 +1,17 @@
+# 依赖
+node_modules/
+
+# 备份文件
+*.bak*
+
+# 调试预览生成物（开发过程截图/临时预览页）
+preview-*.png
+renderer/preview-*.html
+renderer/preview-*.png
+
+# 日志
+*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store

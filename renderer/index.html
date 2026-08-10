@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Codex 像素水母</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 桌宠主视图 -->
+  <div class="pet-shell" id="petShell">
+    <div class="bubble" id="bubble"></div>
+    <canvas id="pet" width="48" height="60"></canvas>
+    <div class="status" id="status"><span id="statusText">空闲</span></div>
+    <div class="detail-line" id="detailLine" hidden></div>
+  </div>
+
+  <!-- 详情面板（双击打开：状态 + 时间线 + 提醒） -->
+  <div class="panel" id="panel" hidden>
+    <div class="panel-head">
+      <span id="panelState">🛋️ 空闲</span>
+      <button class="panel-close" id="panelClose" title="关闭">×</button>
+    </div>
+    <div class="panel-sub" id="panelDetail"></div>
+    <div class="panel-sec">🕒 最近活动</div>
+    <ul class="panel-list" id="timelineList"></ul>
+    <div class="panel-sec">⏰ 待办提醒 <button class="mini-btn" id="btnClearReminders">清空</button></div>
+    <ul class="panel-list" id="reminderList"></ul>
+    <div class="panel-foot">
+      <button class="mini-btn q" data-min="5">5分</button>
+      <button class="mini-btn q" data-min="15">15分</button>
+      <button class="mini-btn q" data-min="30">30分</button>
+      <button class="mini-btn q" data-min="60">60分</button>
+      <input id="customMin" type="number" min="1" max="1440" placeholder="分钟" title="自定义分钟数">
+      <button class="mini-btn add" id="btnAddCustom">＋</button>
+    </div>
+  </div>
+
+  <!-- 浏览器调试模式面板（Electron 中隐藏） -->
+  <div id="devPanel" class="dev" hidden>
+    <h2>🧪 浏览器调试模式（无 Electron）</h2>
+    <div class="buttons" id="buttons"></div>
+    <p class="tip">右键/拖动只在桌宠窗口生效；点水母可戳一戳；<a href="?gallery=1">画廊模式</a></p>
+  </div>
+
+  <!-- 画廊模式容器 -->
+  <div id="galleryWrap" class="gallery" hidden></div>
+  <p class="gallery-hint" id="galleryHint" hidden>← <a href="index.html">返回</a></p>
+
+  <script src="jellyfish.js"></script>
+  <script src="pet.js"></script>
+</body>
+</html>

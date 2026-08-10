@@ -1,0 +1,19 @@
+{
+  "followMode": "hide",
+  "detectNames": [
+    "codex",
+    "Codex",
+    "opencode"
+  ],
+  "activeSource": "auto",
+  "pollMs": 2000,
+  "debounceTicks": 2,
+  "hideDelayMs": 5000,
+  "showStatusLabel": true,
+  "sound": true,
+  "scale": 1,
+  "theme": "default",
+  "startHidden": true,
+  "notify": true,
+  "breakReminderMin": 45
+}

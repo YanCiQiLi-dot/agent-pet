@@ -1,0 +1,22 @@
+{
+  "name": "codex-pet",
+  "version": "0.2.0",
+  "description": "像素小水母桌宠 - 联动 Codex 工作状态",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "watch": "node state-watcher.js --live",
+    "replay": "node state-watcher.js --replay",
+    "opencode-watch": "node opencode-watcher.js --live",
+    "opencode-replay": "node opencode-watcher.js --replay",
+    "router-test": "node source-router.js --test",
+    "remind-test": "node reminders.js --test",
+    "guard": "node launcher.js",
+    "probe": "node codex-watcher.js --probe",
+    "preview": "start renderer\\index.html"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
