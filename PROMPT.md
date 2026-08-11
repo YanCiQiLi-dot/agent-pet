@@ -126,24 +126,53 @@
    - 摸鱼提醒：`config.breakReminderMin`（默认 45 分钟，0=关闭），主进程递归 `setTimeout` 续期（避免长 interval 漂移），到点发 `kind: 'break'` 提醒
 5. **菜单接线**：右键菜单与托盘菜单都加「⏰ 提醒」子菜单；「自定义分钟…」→ 发 `pet:askreminder` → 渲染层打开面板并聚焦输入框
 
+### Phase 5 —— OpenCode 兼容（2026-08-09）
+1. 新增 `opencode-watcher.js`：并行监听 `opencode.log`（key=value 行）+ `prompt-history.jsonl`，状态机与 Codex 同构（`--test` / `--replay`）
+2. 新增 `source-router.js`：双源 LRU 路由——谁最后有真实工作事件就显示谁；`activeSource: "auto" | "codex" | "opencode"`；`--test` 自测
+3. 主进程 `SourceRouter` 分发两个 watcher 的状态，气泡带来源标记（🅒 Codex / 🅞 OpenCode）
+
+### Phase 6 —— 独立面板 + 热更新 + 提醒自定义（2026-08-11）
+1. **独立可缩放面板窗口**：面板从桌宠窗口内搬出
+   - `main.js` 新增 `panelWin`（独立 BrowserWindow：默认 380×460、最小 300×340、`resizable: true`、原生标题栏可拖动）
+   - 渲染层用 `?panel=1` 查询参数进入 `PANEL_MODE`（`body.panel-only`：隐藏 `.pet-shell`，面板占满窗口）
+   - 定位：默认放桌宠左侧（左侧无空间放右侧）；位置/大小持久化到 `panel-state.json`
+   - 开关：渲染层 `petAPI.setPanelOpen(open)` → IPC `pet:panel-set` → `showPanelWindow()/hidePanelWindow()`；点 × 只隐藏不销毁；`before-quit` 才销毁
+   - ✅ **踩坑：面板与桌宠同窗口时，打开要改桌宠窗口尺寸/位置，关闭后桌宠“瞬移”到面板位置 → 必须独立窗口，桌宠窗口尺寸/位置永远不变**
+2. **配置热更新**：`main.js` 用 `fs.watch(config.json)` + 300ms 去抖重载，动态生效：`theme` / `sound` / `showStatusLabel` / `scale`（含窗口尺寸）/ `detectNames` / `pollMs` / `debounceTicks` / `activeSource` / `breakReminderMin`
+   - 主进程 `pet:config` 推送 → 渲染层 `onConfigUpdated` → `applyConfig()`（皮肤/音效/标签/缩放）
+   - `codex-watcher.update()` / `source-router.setFixed()` 支持运行中调整
+   - ✅ **踩坑：PowerShell `Set-Content -Encoding UTF8` / 记事本保存会写 UTF-8 BOM，`JSON.parse` 直接失败并静默回退默认配置 → `loadConfig()` 先 `.replace(/^\uFEFF/, '')`**
+3. **日志轮转**：`codex-pet.log` 超 2MB → 改名 `.1`（覆盖旧的），防无限膨胀
+4. **主题切换**：右键/托盘新增「🎨 外观主题」（🪻 默认蓝紫 / 🌸 樱花粉 / 🌊 海洋蓝，radio 标记当前项）；`setThemeConfig()` 写回 `config.json`（带尾换行）+ 立即生效
+   - ✅ **踩坑：`THEMES.default = null` 导致 `setTheme('default')` 是空操作，切过 sakura 后回不去默认色 → 保存初始调色板副本 `DEFAULT_PAL`，default 时恢复**
+5. **提醒自定义（C 增强）**：
+   - 内容预设：💧喝水 / 🚶走一走 / 🧘休息 / ✍️自定义（限 40 字）；先选内容 + 时间（5/15/30/60 选中高亮，或输入分钟），再点「✓ 添加提醒」确认
+   - 右键菜单快捷项：💧 喝水(30 分) / 🚶 走一走(45 分) / ✍️ 自定义内容…
+   - `config.breakReminderText` 自定义摸鱼文案
+   - 气泡自适应：`.bubble` 去 `nowrap/ellipsis` 改自动换行，显示时长按行数加时；面板窗口内无宠物气泡，反馈用 `#panelToast` 提示条
+   - ✅ **踩坑：`.panel { display:flex }` 会覆盖 `hidden` 属性，导致面板点了 × 关不掉 → 全局 `[hidden] { display:none !important }`**
+6. **清理与测试**：删除废案 `renderer/cat.js` / `octopus.js` 及 `preview-*` 资源；新增 `state-watcher.js --test`（17 例）与 `opencode-watcher.js --test`（17 例），npm scripts：`state-test` / `opencode-test`
+
 ## 四、项目结构（交付模板）
 
 ```
 your-pet/
 ├─ package.json        # main: main.js; devDependencies: electron
 ├─ config.json         # 联动模式/检测名/音效/皮肤/大小
-├─ main.js             # Electron 主进程（窗口/托盘/菜单/IPC/启停接入）
+├─ main.js             # Electron 主进程（桌宠窗口/独立面板窗口/托盘/菜单/IPC/启停/热更新）
 ├─ preload.js          # contextBridge 桥接
-├─ state-watcher.js    # 日志监听 + 状态机（纯 Node，--replay 可回放验证）
+├─ state-watcher.js    # Codex 日志监听 + 状态机（--test 自测 / --replay 回放）
+├─ opencode-watcher.js # OpenCode 日志监听 + 状态机（--test 自测 / --replay 回放）
+├─ source-router.js    # 双源 LRU 路由（谁在干活显示谁，--test 自测）
 ├─ codex-watcher.js    # 进程生命周期检测（--probe 可模拟测试）
 ├─ reminders.js        # 提醒管理器（纯 Node，--test 可自测；待办 + 摸鱼）
 ├─ launcher.js         # 可选守护进程（quit 模式用）
 ├─ assets/tray.png     # 托盘图标（PIL 生成）
 └─ renderer/
-   ├─ index.html       # 桌宠窗口（?gallery=1 画廊调试）
+   ├─ index.html       # 桌宠窗口（?panel=1 为独立面板窗口；?gallery=1 画廊调试）
    ├─ style.css        # 透明背景 + pixelated + 状态标签
    ├─ jellyfish.js     # 像素角色绘制器（按用户确认的形象实现；默认水母，可整体替换）
-   └─ pet.js           # 渲染层：状态应用/拖动/气泡/音效/画廊
+   └─ pet.js           # 渲染层：状态应用/拖动/气泡/音效/画廊/面板模式（PANEL_MODE）
 ```
 
 ## 五、测试清单（按序执行）
@@ -151,6 +180,7 @@ your-pet/
 1. `node --check` 全部 JS 语法
 2. `node state-watcher.js --replay <真实日志>` 回放验证状态推导（✅ 能看出每个状态对应的日志事件）
 2.5 `node reminders.js --test` 提醒自测（添加 0.05 分钟提醒，验证到期触发 + 持久化）
+2.6 `node state-watcher.js --test` 与 `node opencode-watcher.js --test`（各 17 例：指令/分析/写码/运行/搜索/审批/完成/坏行容错/文件名提取/静默回落/沉睡）
 3. 去抖单测：注入模拟探测器，验证"连续 2 次一致才触发、抖动不误报"
 4. `electron . --smoke` 冒烟测试（自动退出，验证窗口/状态机/生命周期/托盘初始化无崩溃）
 5. 真机验收：
@@ -160,6 +190,10 @@ your-pet/
    - [ ] 关掉目标程序 → 宠物 5s 内消失；重开 → 4s 内出现
    - [ ] 托盘：显示/隐藏、手动状态、退出都正常
    - [ ] 音效随状态播放；`config.json` 改皮肤/大小后"重新加载"生效
+   - [ ] 热更新：改 `config.json` 的 `theme` → 2~3 秒内变色，无需重启（日志出现 `[config] hot-reloaded theme=...`）
+   - [ ] 主题切换：右键 → 🎨 外观主题，三档可切且持久化；切回默认能恢复蓝紫色
+   - [ ] 独立面板窗口：双击水母打开在桌宠旁，可拖动/缩放，关 × 只隐藏，桌宠位置不变；标签页「最近活动/待办提醒」切换正常，位置/大小重启后记住
+   - [ ] 提醒自定义：面板选内容(预设/自定义) + 时间 → 点「✓ 添加提醒」才添加；到点气泡完整换行显示全文
 
    - [ ] 开机自启：启动文件夹存在 `Codex桌宠.lnk`；重启后桌宠进程在（startHidden 下托盘待命、不弹窗）
    - [ ] 桌面快捷方式：桌面存在 `Codex桌宠.lnk` 且双击能直接拉起桌宠（无需进目录 npm start）
@@ -191,6 +225,11 @@ your-pet/
 | 19 | 块内函数顶层不可见 | `applyState` 调 `renderTimeline` ReferenceError | 顶层 `panelHooks` 注册/调用，避免块级作用域坑 |
 | 20 | 沙箱/受限环境建新目录失败 | `New-Item features` Access denied | 新模块先放项目根（与 state-watcher.js 平级），二期多 Agent 再统一目录 |
 | 21 | 透明窗口整块矩形拦截鼠标 | 桌宠四周（尤其下方）点不动下层窗口 | `setIgnoreMouseEvents(true,{forward:true})` + 渲染层 `elementFromPoint` 命中检测，仅画布/面板接收鼠标 |
+| 22 | `display:flex` 覆盖 `hidden` 属性 | 面板点了 × 关不掉（`hidden=true` 无效） | 全局 `[hidden] { display:none !important }` 兜底 |
+| 23 | 面板与桌宠同窗口 | 关面板后桌宠“瞬移”到面板位置 | 面板独立窗口，桌宠窗口尺寸/位置永远不变 |
+| 24 | 文件带 UTF-8 BOM | `JSON.parse` 抛错静默回退默认配置（Notepad / Set-Content 保存后） | 读配置先 `.replace(/^\uFEFF/, '')` |
+| 25 | `setTheme('default')` 空操作 | 切过主题后回不到默认色 | 保存初始调色板副本 `DEFAULT_PAL`，default 时恢复 |
+| 26 | 重启命令中断导致双开 | 两个桌宠实例并存（9 个 electron 进程） | 重启前按进程路径过滤全部停止，再启唯一实例 |
 
 ## 七、扩展建议（做成"你自己的"）
 
