@@ -16,6 +16,7 @@ const SourceRouter = require('./source-router');
 
 const BASE_W = 220;
 const BASE_H = 310;
+const MAX_LOG_BYTES = 2 * 1024 * 1024;   // 桌宠日志超过 2MB 时轮转（保留 .1）
 
 const DEFAULT_CONFIG = {
   followMode: 'hide',
@@ -29,18 +30,79 @@ const DEFAULT_CONFIG = {
   scale: 1.0,
   theme: 'default',
   notify: true,            // 提醒到点是否发系统通知
-  breakReminderMin: 45     // 摸鱼提醒间隔（分钟），0 = 关闭
+  breakReminderMin: 45,    // 摸鱼提醒间隔（分钟），0 = 关闭
+  breakReminderText: '🚶 起来活动一下，喝口水吧～'   // 摸鱼提醒文案（可自定义）
 };
 
 const configPath = () => path.join(__dirname, 'config.json');
 function loadConfig() {
   try {
-    const u = JSON.parse(fs.readFileSync(configPath(), 'utf8'));
+    // 去掉可能的 UTF-8 BOM（Notepad/PowerShell 保存常带），否则 JSON.parse 会失败
+    const u = JSON.parse(fs.readFileSync(configPath(), 'utf8').replace(/^\uFEFF/, ''));
     return Object.assign({}, DEFAULT_CONFIG, u);
   } catch { return DEFAULT_CONFIG; }
 }
 
 let config = loadConfig();
+
+// ---------- 配置热更新：监听 config.json，变更后动态生效（无需重启） ----------
+let configWatcher = null;
+let configReloadTimer = null;
+
+function pushConfigToRenderer() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('pet:config', {
+      scale: config.scale,
+      theme: config.theme,
+      sound: config.sound,
+      showStatusLabel: config.showStatusLabel
+    });
+  }
+}
+
+function applyConfigToRuntime(prev, next) {
+  if (!next) return;
+  // 进程检测参数（detectNames / pollMs / debounceTicks）
+  if (lifeWatcher) {
+    lifeWatcher.update({
+      names: next.detectNames,
+      pollMs: next.pollMs,
+      debounceTicks: next.debounceTicks
+    });
+  }
+  // 双源路由固定源（activeSource）
+  if (router) router.setFixed(next.activeSource || 'auto');
+  // 摸鱼提醒间隔（0 = 关闭）
+  if (next.breakReminderMin !== prev.breakReminderMin) scheduleBreak();
+  // 窗口缩放：保持左上角位置不变，更新窗口尺寸
+  if (win && !win.isDestroyed() && next.scale && next.scale !== prev.scale) {
+    const W = Math.round(BASE_W * next.scale);
+    const H = Math.round(BASE_H * next.scale);
+    const [x, y] = win.getPosition();
+    win.setBounds({ x, y, width: W, height: H });
+  }
+  // 渲染层配置（皮肤 / 音效 / 状态标签 / 缩放）
+  pushConfigToRenderer();
+}
+
+function watchConfig() {
+  try {
+    configWatcher = fs.watch(configPath(), () => {
+      clearTimeout(configReloadTimer);
+      configReloadTimer = setTimeout(() => {
+        const prev = config;
+        config = loadConfig();
+        log('[config] hot-reloaded theme=' + config.theme +
+            ' sound=' + config.sound + ' scale=' + config.scale +
+            ' activeSource=' + config.activeSource +
+            ' breakReminderMin=' + config.breakReminderMin);
+        applyConfigToRuntime(prev, config);
+      }, 300);
+    });
+  } catch (e) {
+    log('[config] watch failed: ' + (e && e.message));
+  }
+}
 let win = null;
 let stateWatcher = null;
 let openCodeWatcher = null;
@@ -53,10 +115,17 @@ let router = null;                             // 双源 LRU 路由（Codex / Op
 // ---------- 日志：写文件，绝不污染用户终端 ----------
 function log(...args) {
   try {
-    fs.appendFileSync(
-      path.join(app.getPath('userData'), 'codex-pet.log'),
-      `[${new Date().toISOString()}] ${args.join(' ')}\n`
-    );
+    const p = path.join(app.getPath('userData'), 'codex-pet.log');
+    // 日志轮转：超过 MAX_LOG_BYTES 后把旧文件改名 .1（覆盖更早的），避免无限膨胀
+    try {
+      const st = fs.statSync(p);
+      if (st.size > MAX_LOG_BYTES) {
+        const old = p + '.1';
+        if (fs.existsSync(old)) fs.unlinkSync(old);
+        fs.renameSync(p, old);
+      }
+    } catch {}
+    fs.appendFileSync(p, `[${new Date().toISOString()}] ${args.join(' ')}\n`);
   } catch {}
   if (process.env.CODEX_PET_DEBUG) console.log(...args);
 }
@@ -97,12 +166,15 @@ function saveWindowState() {
 
 // ---------- 状态推送 ----------
 function sendState(st) {
+  // 来源标记：🅒 Codex / 🅞 OpenCode / 无前缀 = 手动
+  const tag = st.source === 'opencode' ? '🅞' : (st.source === 'codex' ? '🅒' : '');
+  const payload = Object.assign({}, st);
+  if (tag) payload.detail = tag + ' ' + (payload.detail || payload.label || '');
   if (win && !win.isDestroyed()) {
-    // 来源标记：🅒 Codex / 🅞 OpenCode / 无前缀 = 手动
-    const tag = st.source === 'opencode' ? '🅞' : (st.source === 'codex' ? '🅒' : '');
-    const payload = Object.assign({}, st);
-    if (tag) payload.detail = tag + ' ' + (payload.detail || payload.label || '');
     win.webContents.send('pet:state', payload);
+  }
+  if (panelWin && !panelWin.isDestroyed()) {
+    panelWin.webContents.send('pet:state', payload);
   }
 }
 
@@ -164,6 +236,80 @@ function toggleWindow() {
   else win.showInactive();
 }
 
+// ---------- 独立详情面板窗口（可缩放/拖动，不与桌宠抢空间） ----------
+let panelWin = null;
+
+function panelStateFile() {
+  return path.join(app.getPath('userData'), 'panel-state.json');
+}
+
+function loadPanelState() {
+  try { return JSON.parse(fs.readFileSync(panelStateFile(), 'utf8')); } catch { return null; }
+}
+
+function savePanelState() {
+  if (!panelWin || panelWin.isDestroyed()) return;
+  try {
+    const b = panelWin.getBounds();
+    fs.writeFileSync(panelStateFile(), JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height }));
+  } catch {}
+}
+
+function createPanelWindow() {
+  if (panelWin && !panelWin.isDestroyed()) return;
+  const st = loadPanelState();
+  const W = (st && st.width >= 300) ? st.width : 380;
+  const H = (st && st.height >= 340) ? st.height : 460;
+  let x = (st && typeof st.x === 'number') ? st.x : null;
+  let y = (st && typeof st.y === 'number') ? st.y : null;
+  if (x == null || y == null) {
+    // 默认放在桌宠左侧（空间不足则右侧）
+    const wa = screen.getPrimaryDisplay().workArea;
+    const b = (win && !win.isDestroyed())
+      ? win.getBounds()
+      : { x: wa.x + wa.width - BASE_W, y: wa.y + wa.height - BASE_H };
+    if (b.x - W - 12 >= wa.x) { x = b.x - W - 12; y = b.y; }
+    else { x = b.x + b.width + 12; y = b.y; }
+  }
+  panelWin = new BrowserWindow({
+    width: W, height: H, x, y,
+    minWidth: 300, minHeight: 340,
+    resizable: true,
+    title: '🪼 Codex 桌宠面板',
+    show: false,
+    backgroundColor: '#0a1c3d',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  panelWin.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { panel: '1' } });
+  panelWin.once('ready-to-show', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.show(); });
+  panelWin.on('moved', savePanelState);
+  panelWin.on('resized', savePanelState);
+  panelWin.on('close', (e) => {
+    // 点 × 只隐藏（保留位置/数据），真正退出时销毁
+    if (!panelWin._quitting) {
+      e.preventDefault();
+      panelWin.hide();
+    }
+  });
+  panelWin.on('closed', () => { panelWin = null; });
+}
+
+function showPanelWindow() {
+  createPanelWindow();
+  if (panelWin && !panelWin.isDestroyed()) {
+    panelWin.show();
+    panelWin.focus();
+  }
+}
+
+function hidePanelWindow() {
+  if (panelWin && !panelWin.isDestroyed()) panelWin.hide();
+}
+
 // ---------- 菜单（窗口右键 + 托盘共用） ----------
 function buildStateSubmenu() {
   return [
@@ -184,31 +330,62 @@ function buildStateSubmenu() {
 // ---------- 提醒（C 方向） ----------
 function buildReminderSubmenu() {
   return [
+    { label: '💧 喝水（30 分钟后）', click: () => quickRemind(30, '喝口水吧～ 补充水分 💧') },
+    { label: '🚶 走一走（45 分钟后）', click: () => quickRemind(45, '起来走一走，活动一下筋骨 🚶') },
+    { label: '✍️ 自定义内容…', click: askCustomReminder },
+    { type: 'separator' },
     { label: '⏱ 5 分钟后', click: () => quickRemind(5) },
     { label: '⏱ 15 分钟后', click: () => quickRemind(15) },
     { label: '⏱ 30 分钟后', click: () => quickRemind(30) },
     { label: '⏱ 1 小时后',  click: () => quickRemind(60) },
     { type: 'separator' },
-    { label: '✏️ 自定义分钟…', click: askCustomReminder },
     { label: '📋 查看 / 管理提醒', click: openReminderPanel },
     { label: '🗑 清空全部提醒', click: () => { reminders.clear(); toast('已清空全部提醒'); } }
   ];
 }
 
-function quickRemind(min) {
-  const r = reminders.add(min, `⏰ ${min} 分钟到啦，回来看看～`);
+// ---------- 主题切换（右键 / 托盘菜单：写入 config.json 持久化 + 立即生效） ----------
+function setThemeConfig(theme) {
+  try {
+    const raw = fs.readFileSync(configPath(), 'utf8').replace(/^\uFEFF/, '');
+    const obj = JSON.parse(raw);
+    obj.theme = theme;
+    fs.writeFileSync(configPath(), JSON.stringify(obj, null, 2) + '\n');
+    // 立即生效（config.json 的 fs.watch 会再兜底一次，无副作用）
+    const prev = config;
+    config = loadConfig();
+    applyConfigToRuntime(prev, config);
+    log('[theme] set ' + theme);
+  } catch (err) {
+    log('[theme] set failed: ' + (err && err.message));
+  }
+}
+
+function buildThemeSubmenu() {
+  const cur = config.theme || 'default';
+  return [
+    { label: '🪻 默认（蓝紫）', type: 'radio', checked: cur === 'default', click: () => setThemeConfig('default') },
+    { label: '🌸 樱花粉', type: 'radio', checked: cur === 'sakura', click: () => setThemeConfig('sakura') },
+    { label: '🌊 海洋蓝', type: 'radio', checked: cur === 'ocean', click: () => setThemeConfig('ocean') }
+  ];
+}
+
+function quickRemind(min, text) {
+  const r = reminders.add(min, text || `⏰ ${min} 分钟到啦，回来看看～`);
   log(`[reminder] set ${min}min #${r.id}`);
   toast(`已设置 ${min} 分钟提醒 ⏰`);
 }
 
 function askCustomReminder() {
   ensureVisible();
-  if (win && !win.isDestroyed()) win.webContents.send('pet:askreminder');
+  showPanelWindow();
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('pet:askreminder');
 }
 
 function openReminderPanel() {
   ensureVisible();
-  if (win && !win.isDestroyed()) win.webContents.send('pet:openpanel');
+  showPanelWindow();
+  if (panelWin && !panelWin.isDestroyed()) panelWin.webContents.send('pet:openpanel');
 }
 
 function ensureVisible() {
@@ -223,9 +400,13 @@ function toast(text, seconds) {
 
 function onReminderFire(r) {
   log(`[reminder] fire: ${r.text}`);
+  const payload = { id: r.id, text: r.text, kind: r.kind };
   if (win && !win.isDestroyed()) {
     if (!win.isVisible()) win.showInactive();
-    win.webContents.send('pet:reminder', { id: r.id, text: r.text, kind: r.kind });
+    win.webContents.send('pet:reminder', payload);
+  }
+  if (panelWin && !panelWin.isDestroyed()) {
+    panelWin.webContents.send('pet:reminder', payload);
   }
   if (config.notify !== false && Notification.isSupported()) {
     try {
@@ -240,7 +421,7 @@ function scheduleBreak() {
   const min = config.breakReminderMin || 0;
   if (min <= 0) return;
   scheduleBreak._t = setTimeout(() => {
-    onReminderFire({ id: 'break', text: '🚶 起来活动一下，喝口水吧～', kind: 'break' });
+    onReminderFire({ id: 'break', text: config.breakReminderText || '🚶 起来活动一下，喝口水吧～', kind: 'break' });
     scheduleBreak();
   }, min * 60 * 1000);
 }
@@ -261,6 +442,7 @@ function createTray() {
     { label: '👁 显示 / 隐藏', click: toggleWindow },
     { label: '🎯 手动切换状态', submenu: buildStateSubmenu() },
     { label: '⏰ 提醒', submenu: buildReminderSubmenu() },
+    { label: '🎨 外观主题', submenu: buildThemeSubmenu() },
     { type: 'separator' },
     { label: '🔄 重新加载', click: () => win && win.reload() },
     { label: '👋 退出桌宠', click: () => app.quit() }
@@ -284,6 +466,7 @@ function onCodexStopped() {
       return;
     }
     win.hide();
+    hidePanelWindow();
   }, config.hideDelayMs);
 }
 
@@ -331,11 +514,19 @@ ipcMain.on('pet:contextmenu', (e, info) => {
     { type: 'separator' },
     { label: '🎯 手动切换状态', submenu: buildStateSubmenu() },
     { label: '⏰ 提醒', submenu: buildReminderSubmenu() },
+    { label: '🎨 外观主题', submenu: buildThemeSubmenu() },
     { type: 'separator' },
     { label: '🔄 重新加载', click: () => win && win.reload() },
     { label: '👋 退出桌宠', click: () => app.quit() }
   ]);
   menu.popup({ window: win });
+});
+ipcMain.on('pet:set-theme', (e, theme) => {
+  if (theme === 'default' || theme === 'sakura' || theme === 'ocean') setThemeConfig(theme);
+});
+ipcMain.on('pet:panel-set', (e, open) => {
+  if (open) showPanelWindow();
+  else hidePanelWindow();
 });
 
 // ---------- 启动 ----------
@@ -352,6 +543,7 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(() => {
     createWindow();
     createTray();
+    watchConfig();
 
     // 提醒（C 方向）：加载持久化提醒 + 摸鱼提醒
     reminders = new ReminderManager({
@@ -414,4 +606,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.on('window-all-closed', () => {});
+
+  app.on('before-quit', () => {
+    if (panelWin && !panelWin.isDestroyed()) {
+      panelWin._quitting = true;
+      panelWin.destroy();
+    }
+  });
 }

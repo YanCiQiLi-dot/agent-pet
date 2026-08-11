@@ -12,7 +12,7 @@
   "showStatusLabel": true,
   "sound": true,
   "scale": 1,
-  "theme": "default",
+  "theme": "ocean",
   "startHidden": true,
   "notify": true,
   "breakReminderMin": 45

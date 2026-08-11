@@ -53,10 +53,16 @@
     }
   };
 
-  // 切换皮肤（覆盖 PAL 对应色）
+  // 初始调色板副本（default 时恢复蓝紫原色）
+  var DEFAULT_PAL = Object.assign({}, PAL);
+
+  // 切换皮肤（覆盖 PAL 对应色；default/未知名 → 恢复初始调色板）
   function setTheme(name) {
     var t = THEMES[name];
-    if (!t) return false;
+    if (!t) {
+      Object.keys(DEFAULT_PAL).forEach(function (k) { PAL[k] = DEFAULT_PAL[k]; });
+      return true;
+    }
     Object.keys(t).forEach(function (k) { PAL[k] = t[k]; });
     return true;
   }

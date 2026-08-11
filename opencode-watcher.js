@@ -331,6 +331,104 @@ function clip(s, n) {
   return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
 
+// ---------- 自测（无外部依赖：直接喂日志行，验证状态机推导） ----------
+function runSelfTest() {
+  let fail = 0;
+  function assert(cond, name) {
+    console.log((cond ? '  PASS ' : '  FAIL ') + name);
+    if (!cond) fail++;
+  }
+  function logLine(msg, extra) {
+    const kv = Object.assign({ timestamp: new Date().toISOString(), level: 'INFO', message: msg }, extra || {});
+    return Object.keys(kv).map(k => k + '=' + JSON.stringify(kv[k])).join(' ');
+  }
+  function make() { return new OpenCodeWatcher({ listeningHoldMs: 0, doneHoldMs: 0 }); }
+
+  console.log('== OpenCodeWatcher 状态机自测 ==');
+
+  // 1. asking(per_) 审批 → approval（detail 取 patterns[0]）
+  {
+    const w = make();
+    w.processLine(logLine('asking', { id: 'per_1', permission: 'bash', patterns: '["D:\\\\*"]' }), 'log');
+    assert(w.state === 'approval', 'asking(per_) → approval');
+    assert(w.lastDetail.includes('D:'), 'approval detail 取 patterns[0]');
+  }
+  // 2. evaluated bash → running
+  {
+    const w = make();
+    w.processLine(logLine('evaluated', { permission: 'bash', pattern: 'npm test' }), 'log');
+    assert(w.state === 'running', 'evaluated bash → running');
+    assert(w.lastDetail.includes('npm test'), 'running detail 含命令');
+  }
+  // 3. evaluated edit → coding
+  {
+    const w = make();
+    w.processLine(logLine('evaluated', { permission: 'edit', pattern: 'C:\\proj\\main.js' }), 'log');
+    assert(w.state === 'coding', 'evaluated edit → coding');
+  }
+  // 4. touching file → coding（detail 只含文件名）
+  {
+    const w = make();
+    w.processLine(logLine('touching file', { file: 'C:\\proj\\main.js' }), 'log');
+    assert(w.state === 'coding', 'touching file → coding');
+    assert(w.lastDetail.includes('main.js') && !w.lastDetail.includes('proj'), 'coding detail 只含文件名');
+  }
+  // 5. websearch → searching
+  {
+    const w = make();
+    w.processLine(logLine('evaluated', { permission: 'websearch', pattern: 'Codex API' }), 'log');
+    assert(w.state === 'searching', 'evaluated websearch → searching');
+  }
+  // 6. exiting loop → done
+  {
+    const w = make();
+    w.processLine(logLine('exiting loop', {}), 'log');
+    assert(w.state === 'done', 'exiting loop → done');
+  }
+  // 7. stream small=true 忽略；普通 stream → thinking
+  {
+    const w = make();
+    w.processLine(logLine('stream', { small: 'true' }), 'log');
+    assert(w.state === 'idle', 'stream small=true 被忽略');
+    w.processLine(logLine('stream', {}), 'log');
+    assert(w.state === 'thinking', 'stream → thinking');
+  }
+  // 8. prompt-history 输入 → listening
+  {
+    const w = make();
+    w.processLine(JSON.stringify({ input: '你好' }), 'prompt');
+    assert(w.state === 'listening', 'prompt-history input → listening');
+    assert(w.lastDetail.includes('你好'), 'listening detail 含输入');
+  }
+  // 9. parseKV 解析带空格引号值
+  {
+    const j = parseKV('timestamp=2026-01-01T00:00:00Z message="hello world" level=INFO');
+    assert(j && j.message === 'hello world', 'parseKV 解析带空格引号值');
+  }
+  // 10. 工作状态不被静默误判；非工作状态超时回 idle；超长无事件 → 沉睡
+  {
+    const w = make();
+    w.processLine(logLine('evaluated', { permission: 'bash', pattern: 'long' }), 'log');
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'running', '工作状态(running)不被 60s 静默误判');
+    w.setState('done', { detail: 'x' });
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'idle', '非工作状态超时回 idle');
+  }
+  {
+    const w = new OpenCodeWatcher({ idleAfterMs: 0, sleepAfterMs: 60000, listeningHoldMs: 0, doneHoldMs: 0 });
+    w.processLine(logLine('exiting loop', {}), 'log');
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'sleep', '超长无事件 → 沉睡');
+  }
+
+  console.log(fail ? '\n-- RESULT: FAIL (' + fail + ')' : '\n-- RESULT: ALL PASS');
+  process.exit(fail ? 1 : 0);
+}
+
 module.exports = OpenCodeWatcher;
 
 // ---------- CLI ----------
@@ -353,7 +451,9 @@ if (require.main === module) {
     console.log('watching', w.opts.logPath);
     console.log('watching', w.opts.promptPath, '… (Ctrl+C to stop)');
     process.on('SIGINT', () => { w.stop(); process.exit(0); });
+  } else if (args[0] === '--test') {
+    runSelfTest();
   } else {
-    console.log('用法: node opencode-watcher.js --live | --replay <opencode.log>');
+    console.log('用法: node opencode-watcher.js --live | --replay <opencode.log> | --test');
   }
 }

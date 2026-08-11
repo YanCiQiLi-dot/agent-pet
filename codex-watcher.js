@@ -31,6 +31,13 @@ class CodexLifecycleWatcher extends EventEmitter {
     this.timer = null;
   }
 
+  // 配置热更新：运行中动态调整检测参数（不重建 watcher）
+  update(opts = {}) {
+    if (Array.isArray(opts.names) && opts.names.length) this.names = opts.names;
+    if (opts.pollMs > 0) this.pollMs = opts.pollMs;
+    if (opts.debounceTicks > 0) this.debounceTicks = opts.debounceTicks;
+  }
+
   // 手动探测一次当前状态
   // 用 Get-Process（tasklist /FI 在部分受限环境会被拒绝访问）
   detect(cb) {

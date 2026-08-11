@@ -39,9 +39,10 @@ $s.Save()
 
 - **拖动**：按住水母拖动到任意位置（位置会被记住）
 - **单击**：戳一戳冒气泡
-- **双击**：打开**详情面板**——最近活动时间线 + 待办提醒管理（详见下文「状态详情与提醒」）
+- **双击**：打开**独立面板窗口**（桌宠旁，可拖动/缩放，标签页切换最近活动 / 待办提醒，详见下文「状态详情与提醒」）
 - **右键**：手动切换状态 / 回到自动联动 / 重新加载 / 退出
-- **右键 ⏰ 提醒**：5/15/30/60 分钟、自定义分钟、查看管理、清空全部
+- **右键 ⏰ 提醒**：💧 喝水 / 🚶 走一走 快捷提醒、自定义内容、5/15/30/60 分钟、查看管理、清空全部
+- **右键 🎨 外观主题**：蓝紫（默认）/ 樱花粉 / 海洋蓝 一键切换（写入 config.json 持久化）
 - **托盘**：右下角托盘图标常驻；双击显示/隐藏，右键可手动切状态/设置提醒/退出
 - **透明区域不挡鼠标**：桌宠只在画布/详情面板上接收鼠标，四周透明区域（尤其下方）会点击穿透到下层窗口
 
@@ -69,6 +70,7 @@ $s.Save()
 
 ### 🚶 摸鱼提醒
 `config.json` 的 `breakReminderMin`（默认 `45` 分钟）到点提醒你起来活动；设为 `0` 关闭。
+`breakReminderText` 可自定义摸鱼提醒文案（默认 `🚶 起来活动一下，喝口水吧～`）。
 
 ## 自定义形象
 
@@ -113,9 +115,13 @@ npm run replay -- <rollout文件>   # 回放历史日志，验证状态推导
 npm run opencode-watch   # 实时查看 OpenCode 状态推导（无需启动桌宠）
 npm run opencode-replay -- <opencode.log>  # 回放 OpenCode 日志验证状态推导
 npm run router-test      # 双源 LRU 切换逻辑自测
+npm run state-test       # Codex 状态机自测（node state-watcher.js --test）
+npm run opencode-test    # OpenCode 状态机自测（node opencode-watcher.js --test）
 npm run preview    # 浏览器打开动画原型（画廊模式 ?gallery=1）
 npm run remind-test # 提醒模块自测（node reminders.js --test）
 ```
+
+> 🔄 **配置热更新**：修改 `config.json` 后无需重启桌宠，约 0.3 秒后自动生效（皮肤 / 音效 / 状态标签 / 缩放 / 检测进程名 / 轮询间隔 / 摸鱼提醒等）。桌宠日志超过 2MB 会自动轮转保留 `.1`。
 
 ## 配置（config.json）
 
@@ -132,6 +138,7 @@ npm run remind-test # 提醒模块自测（node reminders.js --test）
 | `sound` / `showStatusLabel` | 音效 / 状态标签开关 | `true` |
 | `notify` | 提醒到点是否发系统通知 | `true` |
 | `breakReminderMin` | 摸鱼提醒间隔（分钟），`0` 关闭 | `45` |
+| `breakReminderText` | 摸鱼提醒文案（可自定义） | `🚶 起来活动一下，喝口水吧～` |
 
 ## 目录
 

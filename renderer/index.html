@@ -15,24 +15,44 @@
   </div>
 
   <!-- 详情面板（双击打开：状态 + 时间线 + 提醒） -->
-  <div class="panel" id="panel" hidden>
+  <div class="panel" id="panel" data-tab="reminders" hidden>
     <div class="panel-head">
-      <span id="panelState">🛋️ 空闲</span>
+      <span class="panel-title"><span class="status-dot" id="statusDot"></span><span id="panelState">🛋️ 空闲</span></span>
       <button class="panel-close" id="panelClose" title="关闭">×</button>
     </div>
     <div class="panel-sub" id="panelDetail"></div>
-    <div class="panel-sec">🕒 最近活动</div>
-    <ul class="panel-list" id="timelineList"></ul>
-    <div class="panel-sec">⏰ 待办提醒 <button class="mini-btn" id="btnClearReminders">清空</button></div>
-    <ul class="panel-list" id="reminderList"></ul>
-    <div class="panel-foot">
-      <button class="mini-btn q" data-min="5">5分</button>
-      <button class="mini-btn q" data-min="15">15分</button>
-      <button class="mini-btn q" data-min="30">30分</button>
-      <button class="mini-btn q" data-min="60">60分</button>
-      <input id="customMin" type="number" min="1" max="1440" placeholder="分钟" title="自定义分钟数">
-      <button class="mini-btn add" id="btnAddCustom">＋</button>
+    <div class="panel-tabs">
+      <button class="tab" data-tab="activity">🕒 最近活动</button>
+      <button class="tab active" data-tab="reminders">⏰ 待办提醒 <span class="tab-count" id="reminderCount"></span></button>
     </div>
+    <div class="panel-body">
+      <ul class="panel-list" id="timelineList"></ul>
+      <div id="reminderArea">
+        <div class="reminder-head">
+          <span>待办提醒</span>
+          <button class="mini-btn" id="btnClearReminders">清空</button>
+        </div>
+        <ul class="panel-list" id="reminderList"></ul>
+        <div class="panel-foot">
+          <div class="preset-row" id="presetRow">
+            <button class="mini-btn preset" data-preset="water">💧 喝水</button>
+            <button class="mini-btn preset" data-preset="walk">🚶 走一走</button>
+            <button class="mini-btn preset" data-preset="rest">🧘 休息</button>
+            <button class="mini-btn preset" data-preset="custom">✍️ 自定义</button>
+          </div>
+          <input id="customText" type="text" maxlength="40" placeholder="输入提醒内容（限 40 字）" title="自定义提醒内容" hidden>
+          <div class="time-row">
+            <button class="mini-btn q" data-min="5">5分</button>
+            <button class="mini-btn q" data-min="15">15分</button>
+            <button class="mini-btn q" data-min="30">30分</button>
+            <button class="mini-btn q" data-min="60">60分</button>
+            <input id="customMin" type="number" min="1" max="1440" placeholder="分钟" title="自定义分钟数">
+            <button class="mini-btn confirm" id="btnAddCustom">✓ 添加提醒</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="panel-toast" id="panelToast" hidden></div>
   </div>
 
   <!-- 浏览器调试模式面板（Electron 中隐藏） -->

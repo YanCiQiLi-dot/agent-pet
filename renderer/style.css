@@ -1,4 +1,6 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
+/* 修复：元素带 hidden 属性时强制隐藏（避免被 display 覆盖导致面板关不掉） */
+[hidden] { display: none !important; }
 
 /* Electron 桌宠：全透明背景 */
 body {
@@ -7,6 +9,12 @@ body {
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+}
+
+/* Electron：桌宠壳靠右，面板在左侧展开（窗口向左扩，桌宠屏幕位置不变） */
+body.electron {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* 浏览器调试模式：深海背景 */
@@ -47,15 +55,18 @@ body.browser {
   background: rgba(255,255,255,.96);
   color: #2a2140;
   font-size: 13px; font-weight: bold;
+  line-height: 1.45;
   padding: 6px 12px;
   border-radius: 12px;
   box-shadow: 0 4px 10px rgba(0,0,0,.45);
-  opacity: 0; pointer-events: none; white-space: nowrap;
+  opacity: 0; pointer-events: none;
+  white-space: normal;          /* 允许换行，完整显示内容 */
+  word-break: break-word;
   transition: opacity .25s, transform .25s;
   z-index: 5;
   max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
+  text-overflow: clip;
 }
 .bubble.show { opacity: 1; transform: translateX(-50%) translateY(-8px); }
 .bubble::after {
@@ -151,10 +162,11 @@ body.browser #pet { width: 288px; height: 360px; }
 /* ---------- 详情面板（B+C：时间线 + 提醒） ---------- */
 .panel {
   position: absolute;
-  top: 6px; left: 50%;
-  transform: translateX(-50%);
+  top: 6px; left: 8px;
   width: 206px;
-  max-height: 296px;
+  max-height: 300px;
+  display: flex;
+  flex-direction: column;
   overflow-y: auto;
   background: rgba(16, 30, 62, .96);
   border: 2px solid rgba(90, 140, 220, .65);
@@ -164,6 +176,24 @@ body.browser #pet { width: 288px; height: 360px; }
   z-index: 20;
   box-shadow: 0 8px 24px rgba(0, 0, 0, .55);
   padding: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,160,220,.4) transparent;
+}
+.panel::-webkit-scrollbar { width: 5px; }
+.panel::-webkit-scrollbar-thumb { background: rgba(120,160,220,.4); border-radius: 3px; }
+.panel::-webkit-scrollbar-track { background: transparent; }
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.status-dot {
+  flex: 0 0 auto;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: #8fb2e8;
+  box-shadow: 0 0 6px rgba(143,178,232,.8);
 }
 .panel-head {
   display: flex;
@@ -172,7 +202,7 @@ body.browser #pet { width: 288px; height: 360px; }
   font-size: 14px;
   font-weight: bold;
   color: #ffd9ec;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 .panel-close {
   background: none;
@@ -188,12 +218,17 @@ body.browser #pet { width: 288px; height: 360px; }
   font-size: 11px;
   color: #8fb2e8;
   margin-bottom: 6px;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  word-break: break-word;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .panel-sec {
-  margin: 8px 0 4px;
+  margin: 9px 0 4px;
+  padding-left: 7px;
+  position: relative;
   font-size: 12px;
   font-weight: bold;
   color: #c3a6ff;
@@ -201,27 +236,55 @@ body.browser #pet { width: 288px; height: 360px; }
   align-items: center;
   gap: 6px;
 }
+.panel-sec::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 50%;
+  transform: translateY(-50%);
+  width: 3px; height: 12px;
+  border-radius: 2px;
+  background: linear-gradient(#c3a6ff, #6a4fd8);
+}
 .panel-list {
   list-style: none;
-  max-height: 84px;
+  flex: 1 1 auto;          /* 标签页模式：当前列表独占剩余空间，内部滚动 */
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
+  padding-right: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120,160,220,.35) transparent;
 }
+.panel-list::-webkit-scrollbar { width: 4px; }
+.panel-list::-webkit-scrollbar-thumb { background: rgba(120,160,220,.35); border-radius: 3px; }
+.panel-list::-webkit-scrollbar-track { background: transparent; }
 .panel-list li {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 2px;
+  gap: 6px;
+  padding: 4px 3px;
   border-bottom: 1px dashed rgba(120, 160, 220, .25);
+  border-radius: 5px;
   font-size: 11px;
 }
+.panel-list li:hover { background: rgba(120,160,220,.12); }
 .panel-list li .tl-icon { flex: 0 0 auto; }
 .panel-list li .tl-text {
   flex: 1;
-  white-space: nowrap;
+  display: -webkit-box;         /* 最多两行，超出省略，悬浮可看全文 */
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  word-break: break-word;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.panel-list li .tl-time { flex: 0 0 auto; color: #6f90c4; font-size: 10px; }
+.panel-list li .tl-time {
+  flex: 0 0 auto;
+  color: #6f90c4;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
 .panel-list li .rm-x {
   flex: 0 0 auto;
   background: none;
@@ -231,14 +294,137 @@ body.browser #pet { width: 288px; height: 360px; }
   font-size: 13px;
   line-height: 1;
   padding: 0 2px;
+  opacity: .7;
 }
+.panel-list li .rm-x:hover { opacity: 1; color: #ff5c7a; }
 .panel-list .empty { color: #6f90c4; justify-content: center; border-bottom: none; }
+.panel-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 2px 0 8px;
+}
+.panel-tabs .tab {
+  flex: 1;
+  padding: 6px 0;
+  text-align: center;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: bold;
+  color: #9fbce8;
+  background: #12264d;
+  border: 1px solid #3a5f9e;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.panel-tabs .tab:hover { background: #1c3a6e; }
+.panel-tabs .tab.active { background: #6a4fd8; border-color: #b79bff; color: #fff; }
+.tab-count { font-weight: normal; opacity: .85; margin-left: 2px; }
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+#reminderArea {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.reminder-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: bold;
+  color: #c3a6ff;
+  margin-bottom: 2px;
+}
+/* 标签页切换：只显示当前列表 */
+.panel[data-tab="activity"] #reminderArea { display: none; }
+.panel[data-tab="reminders"] #timelineList { display: none; }
+.panel-toast {
+  position: absolute;
+  top: 8px; left: 50%;
+  transform: translateX(-50%);
+  max-width: 90%;
+  background: rgba(255,255,255,.96);
+  color: #2a2140;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 5px 12px;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.4);
+  z-index: 30;
+  text-align: center;
+}
+
+/* ---------- 独立面板窗口（?panel=1）：占满窗口、可缩放 ---------- */
+body.panel-only {
+  display: block;
+  background: #0a1c3d;
+}
+body.panel-only .pet-shell { display: none !important; }
+body.panel-only .panel {
+  position: static;
+  width: 100%;
+  height: 100vh;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow-y: auto;
+  padding: 14px 16px;
+  font-size: 13px;
+}
+body.panel-only .panel-tabs .tab { font-size: 13px; padding: 7px 0; }
+body.panel-only .panel-list { font-size: 12px; }
+body.panel-only .panel-list li { padding: 6px 4px; }
 .panel-foot {
   margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+.preset-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+.time-row {
   display: flex;
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+.mini-btn.preset { padding: 4px 6px; text-align: center; }
+.mini-btn.active {
+  background: #6a4fd8;
+  border-color: #b79bff;
+  color: #fff;
+  font-weight: bold;
+}
+.mini-btn.confirm {
+  flex: 1 1 100%;
+  background: linear-gradient(#7a5cf0, #6a4fd8);
+  border-color: #b79bff;
+  color: #fff;
+  font-weight: bold;
+  padding: 5px 10px;
+  text-align: center;
+}
+.mini-btn.confirm:hover { background: linear-gradient(#8a6cf0, #7a5cf0); }
+#customText {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: #eaf3ff;
+  background: #12264d;
+  border: 1px solid #3a5f9e;
+  border-radius: 6px;
+  padding: 3px 5px;
 }
 .mini-btn {
   font-family: inherit;
@@ -251,11 +437,11 @@ body.browser #pet { width: 288px; height: 360px; }
   cursor: pointer;
 }
 .mini-btn:hover { background: #2a4a88; }
-.mini-btn.q { flex: 0 0 auto; }
+.mini-btn.q { flex: 1 1 0; text-align: center; padding: 4px 2px; }
 .mini-btn.add { flex: 0 0 auto; }
 #customMin {
-  flex: 1;
-  min-width: 52px;
+  flex: 1.4 1 44px;
+  min-width: 44px;
   font-family: inherit;
   font-size: 11px;
   color: #eaf3ff;

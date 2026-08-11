@@ -12,6 +12,8 @@
     "opencode-replay": "node opencode-watcher.js --replay",
     "router-test": "node source-router.js --test",
     "remind-test": "node reminders.js --test",
+    "state-test": "node state-watcher.js --test",
+    "opencode-test": "node opencode-watcher.js --test",
     "guard": "node launcher.js",
     "probe": "node codex-watcher.js --probe",
     "preview": "start renderer\\index.html"

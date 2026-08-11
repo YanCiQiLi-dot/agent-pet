@@ -351,6 +351,121 @@ CodexStateWatcher.STATE_META = STATE_META;
 
 module.exports = CodexStateWatcher;
 
+// ---------- 自测（无外部依赖：直接喂日志行，验证状态机推导） ----------
+function runSelfTest() {
+  let fail = 0;
+  function assert(cond, name) {
+    console.log((cond ? '  PASS ' : '  FAIL ') + name);
+    if (!cond) fail++;
+  }
+  function line(type, payload) {
+    return JSON.stringify({ timestamp: new Date().toISOString(), type, payload });
+  }
+  function fcall(name, args) {
+    return line('response_item', { type: 'function_call', name, arguments: JSON.stringify(args || {}) });
+  }
+  function make() { return new CodexStateWatcher({ listeningHoldMs: 0, doneHoldMs: 0 }); }
+
+  console.log('== CodexStateWatcher 状态机自测 ==');
+
+  // 1. 收到指令 → listening
+  {
+    const w = make();
+    w.processLine(line('event_msg', { type: 'user_message', message: { text: '帮我修 bug' } }));
+    assert(w.state === 'listening', 'user_message → listening');
+  }
+  // 2. 任务开始 → thinking
+  {
+    const w = make();
+    w.processLine(line('event_msg', { type: 'task_started' }));
+    assert(w.state === 'thinking', 'task_started → thinking');
+  }
+  // 3. shell 命令 → running（含命令详情）
+  {
+    const w = make();
+    w.processLine(fcall('shell_command', { command: 'npm test' }));
+    assert(w.state === 'running', 'shell_command → running');
+    assert(w.lastDetail.includes('npm test'), 'running detail 含命令');
+  }
+  // 4. 搜索 → searching（含关键词）
+  {
+    const w = make();
+    w.processLine(fcall('search', { queries: ['Codex 文档', 'API'] }));
+    assert(w.state === 'searching', 'search → searching');
+    assert(w.lastDetail.includes('Codex 文档'), 'searching detail 含关键词');
+  }
+  // 5. apply_patch → coding，且能从 patch 文本提取文件名
+  {
+    const w = make();
+    w.processLine(line('response_item', {
+      type: 'custom_tool_call',
+      name: 'apply_patch',
+      input: '*** Update File: a.js\n*** Add File: b.js\n'
+    }));
+    assert(w.state === 'coding', 'apply_patch → coding');
+    assert(w.lastDetail.includes('a.js') && w.lastDetail.includes('b.js'), 'coding detail 含文件名');
+  }
+  // 6. 审批信号 → approval（detail 取 justification）
+  {
+    const w = make();
+    w.processLine(fcall('shell_command', {
+      command: 'npm install',
+      sandbox_permissions: 'require_escalated',
+      justification: '安装依赖'
+    }));
+    assert(w.state === 'approval', 'require_escalated → approval');
+    assert(w.lastDetail.includes('安装依赖'), 'approval detail 取 justification');
+  }
+  // 7. 完成 → done
+  {
+    const w = make();
+    w.processLine(line('event_msg', { type: 'task_complete' }));
+    assert(w.state === 'done', 'task_complete → done');
+  }
+  // 8. reasoning → thinking
+  {
+    const w = make();
+    w.processLine(line('response_item', { type: 'reasoning' }));
+    assert(w.state === 'thinking', 'reasoning → thinking');
+  }
+  // 9. 坏行 / 噪音事件被忽略（不崩溃）
+  {
+    const w = make();
+    w.processLine('this is not json');
+    w.processLine(line('event_msg', { type: 'token_count' }));
+    w.processLine(line('session_meta', { foo: 1 }));
+    assert(w.state === 'idle', '坏行与噪音事件被忽略（保持 idle）');
+  }
+  // 10. extractPatchFiles 提取文件名
+  {
+    const w = make();
+    const files = w.extractPatchFiles('*** Update File: src/a.js\nxxx\n*** Delete File: src/b.js\n*** Move to: src/c.js\n');
+    assert(files.length === 3 && files[0] === 'src/a.js', 'extractPatchFiles 提取 3 个文件');
+  }
+  // 11. 工作状态不被静默误判为空闲；非工作状态超时回 idle；超长无事件 → 沉睡
+  {
+    const w = make();
+    w.processLine(fcall('shell_command', { command: 'sleep 100' }));
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'running', '工作状态(running)不被 60s 静默误判');
+    w.setState('done', { detail: 'x' });
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'idle', '非工作状态超时回 idle');
+  }
+  {
+    const w = new CodexStateWatcher({ idleAfterMs: 0, sleepAfterMs: 60000, listeningHoldMs: 0, doneHoldMs: 0 });
+    w.processLine(fcall('shell_command', { command: 'x' }));
+    w.lastEventTime = Date.now() - 120000;
+    w.checkIdle();
+    assert(w.state === 'sleep', '超长无事件 → 沉睡');
+  }
+
+  console.log(fail ? '\n-- RESULT: FAIL (' + fail + ')' : '\n-- RESULT: ALL PASS');
+  process.exit(fail ? 1 : 0);
+}
+
 // ---------- CLI ----------
 if (require.main === module) {
   const args = process.argv.slice(2);
@@ -370,7 +485,9 @@ if (require.main === module) {
     w.on('state', s => console.log(`[${new Date().toLocaleTimeString()}] ${s.state.padEnd(10)} ${s.label}  ${s.detail}`));
     console.log('watching', w.opts.sessionsDir, '… (Ctrl+C to stop)');
     process.on('SIGINT', () => { w.stop(); process.exit(0); });
+  } else if (args[0] === '--test') {
+    runSelfTest();
   } else {
-    console.log('用法: node state-watcher.js --live | --replay <rollout.jsonl>');
+    console.log('用法: node state-watcher.js --live | --replay <rollout.jsonl> | --test');
   }
 }

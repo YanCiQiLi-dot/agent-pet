@@ -6,6 +6,7 @@
 
   var params = new URLSearchParams(location.search);
   var IS_ELECTRON = typeof window.petAPI !== 'undefined';
+  var PANEL_MODE = params.get('panel') === '1';   // 独立面板窗口模式
   var currentState = 'idle';
   var currentInfo = null;
   var prevState = null;
@@ -17,6 +18,7 @@
 
   if (IS_ELECTRON) document.body.classList.add('electron');
   else document.body.classList.add('browser');
+  if (PANEL_MODE) document.body.classList.add('panel-only');
 
   // ---------- 气泡 ----------
   function showBubble(text, holdMs) {
@@ -25,7 +27,10 @@
     bubble.textContent = text;
     bubble.classList.add('show');
     clearTimeout(showBubble._t);
-    showBubble._t = setTimeout(function () { bubble.classList.remove('show'); }, holdMs || 2400);
+    if (!holdMs) holdMs = 2400;
+    // 长文本自适应加时：每多一行（约 14 字）多显示 0.8 秒，避免长提醒被提前藏掉
+    var lines = Math.max(1, Math.ceil((text || '').length / 14));
+    showBubble._t = setTimeout(function () { bubble.classList.remove('show'); }, holdMs + (lines - 1) * 800);
   }
 
   // ---------- Web Audio 合成音效（P2，零素材） ----------
@@ -105,19 +110,24 @@
     var canvas = document.getElementById('pet');
     var statusEl = document.getElementById('status');
 
-    // 应用配置（皮肤 / 音效 / 状态标签 / 缩放）
-    window.petAPI.getConfig().then(function (cfg) {
+    // 应用配置（皮肤 / 音效 / 状态标签 / 缩放）；启动拉取 + 热更新推送共用
+    function applyConfig(cfg) {
       if (!cfg) return;
       soundOn = cfg.sound !== false;
       if (cfg.theme) Jellyfish.setTheme(cfg.theme);
-      if (cfg.showStatusLabel === false && statusEl) statusEl.classList.add('hidden');
-      if (cfg.scale && cfg.scale !== 1) {
-        canvas.style.width = Math.round(192 * cfg.scale) + 'px';
-        canvas.style.height = Math.round(240 * cfg.scale) + 'px';
-        shell.style.width = Math.round(220 * cfg.scale) + 'px';
-        shell.style.height = Math.round(310 * cfg.scale) + 'px';
+      if (statusEl) {
+        if (cfg.showStatusLabel === false) statusEl.classList.add('hidden');
+        else statusEl.classList.remove('hidden');
       }
-    });
+      var sc = cfg.scale && cfg.scale > 0 ? cfg.scale : 1;
+      canvas.style.width = Math.round(192 * sc) + 'px';
+      canvas.style.height = Math.round(240 * sc) + 'px';
+      shell.style.width = Math.round(220 * sc) + 'px';
+      shell.style.height = Math.round(310 * sc) + 'px';
+    }
+
+    window.petAPI.getConfig().then(applyConfig);
+    window.petAPI.onConfigUpdated(applyConfig);
 
     window.petAPI.onState(applyState);
 
@@ -154,28 +164,56 @@
       });
     });
 
-    // ---------- 透明区域点击穿透（只在水母本体/详情面板上接收鼠标） ----------
-    // 窗口是 220x310 的透明矩形，但可见内容只有画布与标签；不处理的话，
-    // 整块矩形（尤其画布下方）都会在系统层拦截下层窗口的点击。
-    var lastMouse = { x: -1, y: -1 };
-    function syncMouseIgnore() {
-      var el = document.elementFromPoint(lastMouse.x, lastMouse.y);
-      var interactive = !!el && (el.id === 'pet' || el.closest('#panel') || dragging);
-      window.petAPI.setIgnoreMouseEvents(!interactive);
-    }
-    document.addEventListener('mousemove', function (e) {
-      lastMouse.x = e.clientX; lastMouse.y = e.clientY;
-      syncMouseIgnore();
-    });
-    document.addEventListener('mouseleave', function () {
-      lastMouse.x = -1; lastMouse.y = -1;
+    // ---------- 透明区域点击穿透（只在水母本体上接收鼠标；面板窗口不需要） ----------
+    if (!PANEL_MODE) {
+      var lastMouse = { x: -1, y: -1 };
+      function syncMouseIgnore() {
+        var el = document.elementFromPoint(lastMouse.x, lastMouse.y);
+        var interactive = !!el && (el.id === 'pet' || dragging);
+        window.petAPI.setIgnoreMouseEvents(!interactive);
+      }
+      document.addEventListener('mousemove', function (e) {
+        lastMouse.x = e.clientX; lastMouse.y = e.clientY;
+        syncMouseIgnore();
+      });
+      document.addEventListener('mouseleave', function () {
+        lastMouse.x = -1; lastMouse.y = -1;
+        window.petAPI.setIgnoreMouseEvents(true);
+      });
+      // 启动即穿透；悬停到画布时由上面的 mousemove 自动开启（forward 会持续转发 mousemove）
       window.petAPI.setIgnoreMouseEvents(true);
-    });
-    // 启动即穿透；悬停到画布/面板时由上面的 mousemove 自动开启（forward 会持续转发 mousemove）
-    window.petAPI.setIgnoreMouseEvents(true);
+    }
 
     // ---------- 详情面板（B：时间线 + C：提醒） ----------
     var panel = document.getElementById('panel');
+
+    // 标签页切换（最近活动 / 待办提醒）
+    var tabBtns = document.querySelectorAll('.panel-tabs .tab');
+    function selectTab(name) {
+      if (panel) panel.setAttribute('data-tab', name);
+      for (var ti = 0; ti < tabBtns.length; ti++) {
+        tabBtns[ti].classList.toggle('active', tabBtns[ti].getAttribute('data-tab') === name);
+      }
+    }
+    for (var ti = 0; ti < tabBtns.length; ti++) {
+      (function (b) {
+        b.addEventListener('click', function () { selectTab(b.getAttribute('data-tab')); });
+      })(tabBtns[ti]);
+    }
+
+    // 面板窗口内提示（独立窗口里没有宠物气泡，用面板内小条提示）
+    var panelToastEl = document.getElementById('panelToast');
+    function panelMsg(text, holdMs) {
+      if (!panelToastEl) return;
+      panelToastEl.textContent = text;
+      panelToastEl.hidden = false;
+      clearTimeout(panelMsg._t);
+      panelMsg._t = setTimeout(function () { panelToastEl.hidden = true; }, holdMs || 2200);
+    }
+    function notify(text, holdMs) {
+      if (PANEL_MODE) panelMsg(text, holdMs);
+      else showBubble(text, holdMs);
+    }
 
     function fmtClock(ts) {
       var d = new Date(ts);
@@ -184,24 +222,37 @@
     }
 
     function openPanel() {
-      if (!panel) return;
       panelOpen = true;
-      panel.hidden = false;
-      renderPanelHeader();
-      renderTimeline();
-      renderReminders();
+      if (PANEL_MODE && panel) {
+        // 独立面板窗口：显示本窗口内的面板内容
+        panel.hidden = false;
+        renderPanelHeader();
+        renderTimeline();
+        renderReminders();
+      }
+      window.petAPI.setPanelOpen(true);   // 打开/聚焦独立面板窗口（桌宠旁）
     }
 
     function closePanel() {
       panelOpen = false;
       if (panel) panel.hidden = true;
+      window.petAPI.setPanelOpen(false);  // 隐藏独立面板窗口
     }
 
+    var STATE_DOT_COLORS = {
+      idle: '#8fb2e8', listening: '#5ed6c8', thinking: '#b79bff', coding: '#c3a6ff',
+      running: '#5ed6c8', searching: '#6ecfff', done: '#ffe97a', approval: '#ff9e7a', sleep: '#3a5f9e'
+    };
     function renderPanelHeader() {
       var ps = document.getElementById('panelState');
       var pd = document.getElementById('panelDetail');
+      var dot = document.getElementById('statusDot');
       if (ps) ps.textContent = (currentInfo && currentInfo.label) || Jellyfish.STATES[currentState].label;
-      if (pd) pd.textContent = (currentInfo && currentInfo.detail) || '';
+      if (pd) {
+        pd.textContent = (currentInfo && currentInfo.detail) || '';
+        pd.hidden = !pd.textContent;   // 无详情时收起占位行，避免挤压底部按钮
+      }
+      if (dot) dot.style.background = STATE_DOT_COLORS[currentState] || '#8fb2e8';
     }
 
     function renderTimeline() {
@@ -220,6 +271,7 @@
         var li = document.createElement('li');
         var ic = document.createElement('span'); ic.className = 'tl-icon'; ic.textContent = items[i].icon;
         var tx = document.createElement('span'); tx.className = 'tl-text'; tx.textContent = items[i].text;
+        tx.title = items[i].text;   // 悬浮显示全文
         var tm = document.createElement('span'); tm.className = 'tl-time'; tm.textContent = fmtClock(items[i].ts);
         li.appendChild(ic); li.appendChild(tx); li.appendChild(tm);
         ul.appendChild(li);
@@ -230,6 +282,8 @@
       var ul = document.getElementById('reminderList');
       if (!ul) return;
       ul.innerHTML = '';
+      var cnt = document.getElementById('reminderCount');
+      if (cnt) cnt.textContent = reminders.length ? '(' + reminders.length + ')' : '';
       if (!reminders.length) {
         var empty = document.createElement('li');
         empty.className = 'empty';
@@ -241,8 +295,10 @@
         (function (r) {
           var li = document.createElement('li');
           var tx = document.createElement('span'); tx.className = 'tl-text'; tx.textContent = r.text;
+          tx.title = r.text;   // 悬浮显示全文
           var tm = document.createElement('span'); tm.className = 'tl-time';
           tm.textContent = '剩 ' + Math.max(1, Math.round((r.dueAt - Date.now()) / 60000)) + ' 分';
+          tm.title = fmtClock(r.dueAt) + ' 到期';
           var x = document.createElement('button'); x.className = 'rm-x'; x.textContent = '×';
           x.title = '取消此提醒';
           x.addEventListener('click', function () {
@@ -275,13 +331,68 @@
       });
     }
 
-    function addCustom() {
-      var m = parseInt(customMin.value, 10);
-      if (!m || m < 1 || m > 1440) { showBubble('请输入 1~1440 的分钟数'); customMin.focus(); return; }
-      window.petAPI.addReminder(m, '⏰ ' + m + ' 分钟到啦，回来看看～').then(function () {
-        customMin.value = '';
+    // ---------- 提醒内容预设（喝水 / 走一走 / 休息 / 自定义） ----------
+    var PRESET_TEXTS = {
+      water:  '喝口水吧～ 补充水分 💧',
+      walk:   '起来走一走，活动一下筋骨 🚶',
+      rest:   '休息一下，看看远方，放松眼睛 🧘',
+      custom: ''
+    };
+    var currentPreset = null;
+    var customTextInput = document.getElementById('customText');
+    var presetBtns = document.querySelectorAll('.preset-row .preset');
+    for (var pi = 0; pi < presetBtns.length; pi++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          var key = b.getAttribute('data-preset');
+          currentPreset = key === currentPreset ? null : key;   // 再点一次取消
+          for (var x = 0; x < presetBtns.length; x++) presetBtns[x].classList.remove('active');
+          if (currentPreset) b.classList.add('active');
+          if (customTextInput) customTextInput.hidden = currentPreset !== 'custom';
+          if (currentPreset === 'custom' && customTextInput) customTextInput.focus();
+        });
+      })(presetBtns[pi]);
+    }
+
+    // 当前选中的提醒文案：预设 > 自定义输入 > 默认兜底
+    function reminderTextFor(min) {
+      var t = '';
+      if (currentPreset) t = PRESET_TEXTS[currentPreset] || '';
+      if (currentPreset === 'custom' && customTextInput && customTextInput.value.trim()) {
+        t = customTextInput.value.trim();
+      }
+      return t || ('⏰ ' + min + ' 分钟到啦，回来看看～');
+    }
+
+    // 时间按钮：先选择（再点可取消），最后按“✓ 添加提醒”确认
+    var selectedMin = null;
+    var qBtns = document.querySelectorAll('.panel-foot .q');
+    for (var qi = 0; qi < qBtns.length; qi++) {
+      (function (b) {
+        b.addEventListener('click', function () {
+          var m = parseInt(b.getAttribute('data-min'), 10) || 5;
+          selectedMin = selectedMin === m ? null : m;
+          for (var x = 0; x < qBtns.length; x++) qBtns[x].classList.remove('active');
+          if (selectedMin) b.classList.add('active');
+          if (customMin) customMin.value = '';   // 选快捷时间时清空自定义分钟
+        });
+      })(qBtns[qi]);
+    }
+
+    // 确认添加：先选行为（预设/自定义内容）+ 时间，再点确认
+    function confirmAdd() {
+      var m = selectedMin;
+      var cm = customMin ? parseInt(customMin.value, 10) : NaN;
+      if (cm && cm >= 1 && cm <= 1440) m = cm;
+      if (!m || m < 1 || m > 1440) {
+        notify('请先选择时间（5/15/30/60 或输入 1~1440 分钟）');
+        if (customMin) customMin.focus();
+        return;
+      }
+      window.petAPI.addReminder(m, reminderTextFor(m)).then(function () {
+        if (customTextInput) customTextInput.value = '';
         refreshReminders();
-        showBubble('已设置 ' + m + ' 分钟提醒 ⏰');
+        notify('已设置 ' + m + ' 分钟提醒 ⏰');
       });
     }
 
@@ -289,50 +400,40 @@
     var panelClose = document.getElementById('panelClose');
     if (panelClose) panelClose.addEventListener('click', closePanel);
 
-    var qBtns = document.querySelectorAll('.panel-foot .q');
-    for (var qi = 0; qi < qBtns.length; qi++) {
-      (function (b) {
-        b.addEventListener('click', function () {
-          var m = parseInt(b.getAttribute('data-min'), 10) || 5;
-          window.petAPI.addReminder(m, '⏰ ' + m + ' 分钟到啦，回来看看～').then(function () {
-            refreshReminders();
-            showBubble('已设置 ' + m + ' 分钟提醒 ⏰');
-          });
-        });
-      })(qBtns[qi]);
-    }
-
     var btnAddCustom = document.getElementById('btnAddCustom');
     var customMin = document.getElementById('customMin');
-    if (btnAddCustom) btnAddCustom.addEventListener('click', addCustom);
-    if (customMin) customMin.addEventListener('keydown', function (e) { if (e.key === 'Enter') addCustom(); });
+    if (btnAddCustom) btnAddCustom.addEventListener('click', confirmAdd);
+    if (customMin) customMin.addEventListener('keydown', function (e) { if (e.key === 'Enter') confirmAdd(); });
 
     var btnClearReminders = document.getElementById('btnClearReminders');
     if (btnClearReminders) btnClearReminders.addEventListener('click', function () {
       window.petAPI.clearReminders().then(function () {
         refreshReminders();
-        showBubble('已清空全部提醒');
+        notify('已清空全部提醒');
       });
     });
 
-    // 提醒事件：到点弹跳 + 气泡 + 音效
+    // 提醒事件：桌宠弹跳 + 气泡 + 音效；面板窗口只刷新列表
     window.petAPI.onReminder(function (r) {
-      showBubble('⏰ ' + r.text, 6000);
-      playSound('done');
-      var sh = document.getElementById('petShell');
-      if (sh) {
-        sh.classList.remove('bounce');
-        void sh.offsetWidth;   // 强制重排，重新触发动画
-        sh.classList.add('bounce');
+      if (!PANEL_MODE) {
+        showBubble('⏰ ' + r.text, 6000);
+        playSound('done');
+        var sh = document.getElementById('petShell');
+        if (sh) {
+          sh.classList.remove('bounce');
+          void sh.offsetWidth;   // 强制重排，重新触发动画
+          sh.classList.add('bounce');
+        }
       }
       refreshReminders();
     });
 
     window.petAPI.onReminderToast(function (t) {
-      showBubble(t.text, (t.seconds || 1.8) * 1000);
+      if (!PANEL_MODE) showBubble(t.text, (t.seconds || 1.8) * 1000);
     });
 
     window.petAPI.onAskReminder(function () {
+      selectTab('reminders');
       openPanel();
       if (customMin) customMin.focus();
     });
@@ -343,12 +444,16 @@
     refreshTimeline();
     refreshReminders();
 
-    // 动画循环
-    var t0 = performance.now();
-    (function frame(now) {
-      Jellyfish.draw(canvas.getContext('2d'), currentState, (now - t0) / 1000);
-      requestAnimationFrame(frame);
-    })(t0);
+    // 动画循环（面板窗口无需绘制水母）
+    if (!PANEL_MODE) {
+      var t0 = performance.now();
+      (function frame(now) {
+        Jellyfish.draw(canvas.getContext('2d'), currentState, (now - t0) / 1000);
+        requestAnimationFrame(frame);
+      })(t0);
+    }
+    // 面板窗口：加载即展开面板内容
+    if (PANEL_MODE) openPanel();
     return;
   }
 

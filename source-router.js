@@ -48,6 +48,11 @@ class SourceRouter extends EventEmitter {
   getActive() {
     return this.activeSource;
   }
+
+  // 配置热更新：动态切换固定源（'auto' 恢复 LRU）
+  setFixed(fixed) {
+    this.fixed = fixed || 'auto';
+  }
 }
 
 SourceRouter.ACTIVE_STATES = ACTIVE_STATES;
