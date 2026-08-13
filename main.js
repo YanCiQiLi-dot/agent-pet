@@ -10,6 +10,7 @@ const fs = require('fs');
 const os = require('os');
 const CodexStateWatcher = require('./state-watcher');
 const OpenCodeWatcher = require('./opencode-watcher');
+const ClaudeCodeWatcher = require('./claude-watcher');
 const CodexLifecycleWatcher = require('./codex-watcher');
 const ReminderManager = require('./reminders');
 const SourceRouter = require('./source-router');
@@ -21,7 +22,7 @@ const MAX_LOG_BYTES = 2 * 1024 * 1024;   // 桌宠日志超过 2MB 时轮转（�
 const DEFAULT_CONFIG = {
   followMode: 'hide',
   startHidden: false,        // true: start hidden, only show when Codex process detected
-  detectNames: ['codex', 'Codex'],
+  detectNames: ['codex', 'Codex', 'opencode', 'claude'],
   pollMs: 2000,
   debounceTicks: 2,
   hideDelayMs: 5000,
@@ -31,7 +32,8 @@ const DEFAULT_CONFIG = {
   theme: 'default',
   notify: true,            // 提醒到点是否发系统通知
   breakReminderMin: 45,    // 摸鱼提醒间隔（分钟），0 = 关闭
-  breakReminderText: '🚶 起来活动一下，喝口水吧～'   // 摸鱼提醒文案（可自定义）
+  breakReminderText: '🚶 起来活动一下，喝口水吧～',   // 摸鱼提醒文案（可自定义）
+  approvalAfterMs: 20000   // Claude Code 无审批信号：tool_use 超时启发式（0 = 关闭）
 };
 
 const configPath = () => path.join(__dirname, 'config.json');
@@ -70,8 +72,12 @@ function applyConfigToRuntime(prev, next) {
       debounceTicks: next.debounceTicks
     });
   }
-  // 双源路由固定源（activeSource）
+  // 多源路由固定源（activeSource）
   if (router) router.setFixed(next.activeSource || 'auto');
+  // Claude Code 审批启发式超时（0 = 关闭）
+  if (claudeWatcher && next.approvalAfterMs !== prev.approvalAfterMs) {
+    claudeWatcher.update({ approvalAfterMs: next.approvalAfterMs });
+  }
   // 摸鱼提醒间隔（0 = 关闭）
   if (next.breakReminderMin !== prev.breakReminderMin) scheduleBreak();
   // 窗口缩放：保持左上角位置不变，更新窗口尺寸
@@ -106,6 +112,7 @@ function watchConfig() {
 let win = null;
 let stateWatcher = null;
 let openCodeWatcher = null;
+let claudeWatcher = null;
 let lifeWatcher = null;
 let reminders = null;
 let tray = null;
@@ -165,9 +172,11 @@ function saveWindowState() {
 }
 
 // ---------- 状态推送 ----------
+// 来源标记：🅒 Codex / 🅞 OpenCode / 🄲 Claude Code / 无前缀 = 手动
+const SOURCE_BADGES = { codex: '🅒', opencode: '🅞', claude: '🄲' };
+
 function sendState(st) {
-  // 来源标记：🅒 Codex / 🅞 OpenCode / 无前缀 = 手动
-  const tag = st.source === 'opencode' ? '🅞' : (st.source === 'codex' ? '🅒' : '');
+  const tag = SOURCE_BADGES[st.source] || '';
   const payload = Object.assign({}, st);
   if (tag) payload.detail = tag + ' ' + (payload.detail || payload.label || '');
   if (win && !win.isDestroyed()) {
@@ -183,6 +192,7 @@ function setManual(s) {
   if (s === null) {
     if (stateWatcher) stateWatcher.forceRefresh();
     if (openCodeWatcher) openCodeWatcher.forceRefresh();
+    if (claudeWatcher) claudeWatcher.forceRefresh();
   } else {
     const meta = CodexStateWatcher.STATE_META[s] || { label: s, bubble: '' };
     sendState({ state: s, label: meta.label, bubble: meta.bubble, detail: '手动预览', since: Date.now(), manual: true });
@@ -285,6 +295,10 @@ function createPanelWindow() {
     }
   });
   panelWin.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query: { panel: '1' } });
+  // 故障侦测：面板加载失败/渲染进程崩溃时写日志（面板黑屏排查用，静默时零开销）
+  panelWin.webContents.on('did-fail-load', (e, code, desc) => log('[panel] did-fail-load ' + code + ' ' + desc));
+  panelWin.webContents.on('render-process-gone', (e, d) => log('[panel] render-process-gone ' + JSON.stringify(d)));
+  panelWin.webContents.on('preload-error', (e, p, err) => log('[panel] preload-error ' + err));
   panelWin.once('ready-to-show', () => { if (panelWin && !panelWin.isDestroyed()) panelWin.show(); });
   panelWin.on('moved', savePanelState);
   panelWin.on('resized', savePanelState);
@@ -452,7 +466,7 @@ function createTray() {
 
 // ---------- Codex 生命周期联动（P0） ----------
 function onCodexStarted() {
-  log('[life] agent detected (codex/opencode)');
+  log('[life] agent detected (codex/opencode/claude)');
   if (!win || win.isDestroyed()) createWindow();
   else if (!win.isVisible()) win.showInactive();
 }
@@ -488,7 +502,8 @@ ipcMain.handle('pet:getconfig', () => ({
   showStatusLabel: config.showStatusLabel
 }));
 ipcMain.handle('pet:timeline', () => {
-  const w = router && router.getActive() === 'opencode' ? openCodeWatcher : stateWatcher;
+  const watchers = { codex: stateWatcher, opencode: openCodeWatcher, claude: claudeWatcher };
+  const w = router ? watchers[router.getActive()] : null;
   return w ? w.getTimeline() : [];
 });
 ipcMain.handle('pet:remind-add', (e, { minutes, text }) => {
@@ -580,6 +595,17 @@ if (!app.requestSingleInstanceLock()) {
       router.push('opencode', st);
     });
     openCodeWatcher.start();
+
+    // Claude Code 通道（并行监听，互不干扰）
+    claudeWatcher = new ClaudeCodeWatcher({
+      sessionsDir: path.join(os.homedir(), '.claude', 'projects'),
+      approvalAfterMs: config.approvalAfterMs || 20000
+    });
+    claudeWatcher.on('state', (st) => {
+      log(`[state:claude] ${st.state} — ${st.label} (${st.detail})`);
+      router.push('claude', st);
+    });
+    claudeWatcher.start();
 
     // 进程生命周期（P0）
     lifeWatcher = new CodexLifecycleWatcher({

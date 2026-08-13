@@ -153,6 +153,17 @@
    - ✅ **踩坑：`.panel { display:flex }` 会覆盖 `hidden` 属性，导致面板点了 × 关不掉 → 全局 `[hidden] { display:none !important }`**
 6. **清理与测试**：删除废案 `renderer/cat.js` / `octopus.js` 及 `preview-*` 资源；新增 `state-watcher.js --test`（17 例）与 `opencode-watcher.js --test`（17 例），npm scripts：`state-test` / `opencode-test`
 
+### Phase 7 —— Claude Code 兼容（2026-08-13）
+1. 新增 `claude-watcher.js`：并行监听 `~/.claude/projects/<slug>/<sessionId>.jsonl`（每行一个 JSON，`--test` 24 例 / `--replay` / `--live`）
+   - 行类型：`user`（文本输入 / tool_result / 子智能体通知）、`assistant`（`thinking`/`text`/`tool_use` 内容块，`stop_reason` 区分 end_turn 与 tool_use）、`system`（`turn_duration` 回合结束）、`permission-mode`（plan）、其余（mode/last-prompt/…）忽略
+   - 映射：`user` 文本 → 收到指令；`tool_use` 按工具名（Bash/PowerShell→运行、Edit/Write→写代码、Read/Grep/Glob/WebSearch→搜索、Agent→协调子智能体、AskUserQuestion→等待审批）；`tool_result` → 分析中；`turn_duration` + 上一 assistant 行 `stop_reason=end_turn` → 完成（✅ `stop_reason=tool_use` 的回合不判完成，防工具循环误报）
+   - ✅ **文件发现必须排除 `subagents/` 与 `tool-results/` 目录段**：子智能体日志增长时父文件静默，裸“最新 mtime”会被子智能体文件劫持（实测）
+   - ✅ **审批无日志信号**（等待批准时日志停更，与长命令无法区分）→ 超时启发式：需授权工具（Bash/Edit/Write/未知）调用后 `approvalAfterMs`（默认 20s，`0` 关闭）无 `tool_result` → 等待审批；只读工具不武装。README 注明局限：已批准长命令可能误报，结果返回自动恢复
+   - ✅ **关键时序：每条 assistant 行后紧跟 `turn_duration`/`last-prompt` 行**——审批计时只有 `user` 类行才能清除（批准结果= tool_result、回复= 文本输入），system 等行不清除，否则启发式永远不会触发
+2. `source-router.js` 推广为 N 源：当前源空闲时在其余源中取“最后活跃且仍在工作”者（两源时与旧逻辑完全等价）；自测 7+5 场景
+3. 主进程接入：`SOURCE_BADGES` map（🅒/🅞/🄲）、`pet:timeline` 改 watcher lookup map、`setManual(null)` 三通道 forceRefresh、`detectNames` + `claude`、`approvalAfterMs` 热更新
+4. 渲染层/preload **零改动**（只认 9 个共享状态）
+
 ## 四、项目结构（交付模板）
 
 ```
@@ -163,7 +174,8 @@ your-pet/
 ├─ preload.js          # contextBridge 桥接
 ├─ state-watcher.js    # Codex 日志监听 + 状态机（--test 自测 / --replay 回放）
 ├─ opencode-watcher.js # OpenCode 日志监听 + 状态机（--test 自测 / --replay 回放）
-├─ source-router.js    # 双源 LRU 路由（谁在干活显示谁，--test 自测）
+├─ claude-watcher.js   # Claude Code 会话日志监听 + 状态机（--test 自测 / --replay 回放）
+├─ source-router.js    # 多源 LRU 路由（谁在干活显示谁，--test 自测）
 ├─ codex-watcher.js    # 进程生命周期检测（--probe 可模拟测试）
 ├─ reminders.js        # 提醒管理器（纯 Node，--test 可自测；待办 + 摸鱼）
 ├─ launcher.js         # 可选守护进程（quit 模式用）
@@ -181,6 +193,7 @@ your-pet/
 2. `node state-watcher.js --replay <真实日志>` 回放验证状态推导（✅ 能看出每个状态对应的日志事件）
 2.5 `node reminders.js --test` 提醒自测（添加 0.05 分钟提醒，验证到期触发 + 持久化）
 2.6 `node state-watcher.js --test` 与 `node opencode-watcher.js --test`（各 17 例：指令/分析/写码/运行/搜索/审批/完成/坏行容错/文件名提取/静默回落/沉睡）
+2.7 `node claude-watcher.js --test`（24 例，含审批超时启发式、subagents 排除、回合完成判定）与 `node source-router.js --test`（12 场景）
 3. 去抖单测：注入模拟探测器，验证"连续 2 次一致才触发、抖动不误报"
 4. `electron . --smoke` 冒烟测试（自动退出，验证窗口/状态机/生命周期/托盘初始化无崩溃）
 5. 真机验收：
@@ -230,6 +243,8 @@ your-pet/
 | 24 | 文件带 UTF-8 BOM | `JSON.parse` 抛错静默回退默认配置（Notepad / Set-Content 保存后） | 读配置先 `.replace(/^\uFEFF/, '')` |
 | 25 | `setTheme('default')` 空操作 | 切过主题后回不到默认色 | 保存初始调色板副本 `DEFAULT_PAL`，default 时恢复 |
 | 26 | 重启命令中断导致双开 | 两个桌宠实例并存（9 个 electron 进程） | 重启前按进程路径过滤全部停止，再启唯一实例 |
+| 27 | Claude Code 日志无审批信号 | 等待批准与长命令执行日志同样停更，无法区分 | 超时启发式 `approvalAfterMs`（只读工具不武装）；且只有 `user` 类行清计时（assistant 行后紧跟的 turn_duration 不能清） |
+| 28 | 子智能体日志劫持"最新 mtime" | 父会话静默期间子智能体文件增长，选错文件 | 文件发现排除 `subagents/`/`tool-results/` 目录段 + 只认 UUID 命名 `.jsonl` |
 
 ## 七、扩展建议（做成"你自己的"）
 

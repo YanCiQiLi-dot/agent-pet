@@ -3,7 +3,8 @@
   "detectNames": [
     "codex",
     "Codex",
-    "opencode"
+    "opencode",
+    "claude"
   ],
   "activeSource": "auto",
   "pollMs": 2000,
@@ -12,8 +13,9 @@
   "showStatusLabel": true,
   "sound": true,
   "scale": 1,
-  "theme": "ocean",
+  "theme": "sakura",
   "startHidden": true,
   "notify": true,
-  "breakReminderMin": 45
+  "breakReminderMin": 45,
+  "approvalAfterMs": 20000
 }

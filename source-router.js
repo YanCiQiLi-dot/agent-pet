@@ -1,6 +1,6 @@
 // ============================================================
 // source-router.js — 多数据源状态路由（LRU：最后活跃者优先）
-// 支持 Codex / OpenCode 并行监听时决定"水母显示谁的状态"
+// 支持 Codex / OpenCode / Claude Code 并行监听时决定"水母显示谁的状态"
 // 纯 Node，无 Electron 依赖；node source-router.js --test 自测
 // ============================================================
 'use strict';
@@ -19,7 +19,8 @@ class SourceRouter extends EventEmitter {
   constructor(opts = {}) {
     super();
     this.fixed = opts.fixed || 'auto';
-    this.activeSource = opts.defaultSource || 'codex';
+    // 固定源时以其为初始活跃源（否则收到首个事件前 getActive 会返回默认源）
+    this.activeSource = (this.fixed && this.fixed !== 'auto') ? this.fixed : (opts.defaultSource || 'codex');
     this.lastState = {};       // 各源最后状态缓存
     this.lastActive = {};      // 各源最后"真实工作"时间戳
   }
@@ -34,11 +35,15 @@ class SourceRouter extends EventEmitter {
       this.lastActive[source] = Date.now();
       this.activeSource = source;
     } else if (this.activeSource === source) {
-      // 当前源空闲/沉睡：若对端正在干活，切到对端；否则保持（显示空闲）
-      const other = source === 'codex' ? 'opencode' : 'codex';
-      if (this.lastState[other] && ACTIVE_STATES.has(this.lastState[other].state)) {
-        this.activeSource = other;
+      // 当前源空闲/沉睡：在其余源中挑“最后活跃且仍在工作”的；没有则保持当前（显示空闲）
+      let best = null, bestT = 0;
+      for (const s of Object.keys(this.lastState)) {
+        if (s === source) continue;
+        if (ACTIVE_STATES.has(this.lastState[s].state) && (this.lastActive[s] || 0) > bestT) {
+          best = s; bestT = this.lastActive[s] || 0;
+        }
       }
+      if (best) this.activeSource = best;
     }
 
     const cur = this.lastState[this.activeSource] || st;
@@ -49,9 +54,10 @@ class SourceRouter extends EventEmitter {
     return this.activeSource;
   }
 
-  // 配置热更新：动态切换固定源（'auto' 恢复 LRU）
+  // 配置热更新：动态切换固定源（'auto' 恢复 LRU，保持当前活跃源）
   setFixed(fixed) {
     this.fixed = fixed || 'auto';
+    if (this.fixed !== 'auto') this.activeSource = this.fixed;
   }
 }
 
@@ -125,6 +131,54 @@ if (require.main === module && process.argv.includes('--test')) {
     r.on('change', (s) => { last = s; });
     r.push('opencode', st('searching', '搜索: x'));
     assert(last && last.source === 'opencode' && last.detail === '搜索: x', 'change 事件 source=opencode');
+  }
+
+  console.log('== 场景 8（三源）：Claude 干活顶掉其余源 ==');
+  {
+    const r = new SourceRouter();
+    r.push('codex', st('idle'));
+    r.push('opencode', st('idle'));
+    r.push('claude', st('coding'));
+    assert(r.getActive() === 'claude', 'active=claude');
+  }
+
+  console.log('== 场景 9（三源）：多源同时工作 → 取最后活跃者；其空闲后回退到次新活跃者 ==');
+  {
+    const r = new SourceRouter();
+    r.lastActive = { codex: 1000, opencode: 2000 }; // 确定性：直接指定时间戳
+    r.push('codex', st('running'));
+    r.push('opencode', st('searching'));
+    r.push('claude', st('idle'));
+    assert(r.getActive() === 'opencode', 'active=opencode（最后活跃且仍在工作）');
+    r.push('opencode', st('idle'));
+    assert(r.getActive() === 'codex', 'opencode 空闲 → 回退到仍在工作的 codex');
+  }
+
+  console.log('== 场景 10（三源）：固定 activeSource=claude 时忽略其余源 ==');
+  {
+    const r = new SourceRouter({ fixed: 'claude' });
+    r.push('codex', st('coding'));
+    r.push('opencode', st('running'));
+    assert(r.getActive() === 'claude', 'active=claude（固定源，其余推送被忽略）');
+  }
+
+  console.log('== 场景 11（三源）：全部空闲 → 保持最后活跃者 ==');
+  {
+    const r = new SourceRouter();
+    r.push('codex', st('running'));
+    r.push('codex', st('idle'));
+    r.push('opencode', st('idle'));
+    r.push('claude', st('idle'));
+    assert(r.getActive() === 'codex', 'active=codex（最后活跃）');
+  }
+
+  console.log('== 场景 12（三源）：change 事件带 claude source 标记 ==');
+  {
+    const r = new SourceRouter();
+    let last = null;
+    r.on('change', (s) => { last = s; });
+    r.push('claude', st('searching', '搜索: x'));
+    assert(last && last.source === 'claude' && last.detail === '搜索: x', 'change 事件 source=claude');
   }
 
   console.log(fail === 0 ? '\nALL PASS ✅' : `\n${fail} FAILED ❌`);

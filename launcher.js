@@ -9,7 +9,7 @@ const { spawn, execFile } = require('child_process');
 const path = require('path');
 
 const ELECTRON = path.join(__dirname, 'node_modules', 'electron', 'dist', 'electron.exe');
-const NAMES = ['codex'];
+const NAMES = ['codex', 'opencode', 'claude'];
 let petProc = null;
 
 function codexRunning(cb) {

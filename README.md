@@ -1,7 +1,7 @@
-# 🪼 Codex / OpenCode 像素水母桌宠
+# 🪼 Codex / OpenCode / Claude Code 像素水母桌宠
 
-一只悬浮在桌面角落、会**真实反映 Codex 与 OpenCode 工作状态**的像素风小水母。
-两个 CLI 可同时联动：谁在干活就显示谁（LRU 最后活跃者优先，详见下文「双 CLI 联动」）。
+一只悬浮在桌面角落、会**真实反映 Codex、OpenCode 与 Claude Code 工作状态**的像素风小水母。
+三个 CLI 可同时联动：谁在干活就显示谁（LRU 最后活跃者优先，详见下文「三 CLI 联动」）。
 
 > 🐾 **形象可自定义**：本项目的开发 Prompt（[PROMPT.md](PROMPT.md)）要求开工前先询问你想要什么**像素风**形象（水母 / 小猫 / 小狗 / 狐狸 / 幽灵 / 机器人 / 恐龙 / 蘑菇…，未指定默认水母），所以随时可以让 AI 按它重做一个你喜欢的角色。
 
@@ -15,7 +15,7 @@ npm start          # 启动桌宠
 
 > 💡 **已配置开机自启**：启动文件夹里的 `Codex桌宠.lnk` 会在登录后自动拉起桌宠（`startHidden` 下先藏在托盘、不弹窗）。删除该快捷方式即可取消自启。
 > 💡 **桌面快捷方式**：桌面已固定创建 `Codex桌宠.lnk`，双击即可启动（等价 `npm start`），详见下文「桌面快捷方式」。
-> 💡 **默认只跟随 CLI 出现**（`config.json` 的 `startHidden: true`）：启动后先在托盘待命，检测到 Codex / OpenCode 任一进程才显示；全部退出 5 秒后自动隐藏。想恢复“启动即显示”，把 `startHidden` 改为 `false`。
+> 💡 **默认只跟随 CLI 出现**（`config.json` 的 `startHidden: true`）：启动后先在托盘待命，检测到 Codex / OpenCode / Claude Code 任一进程才显示；全部退出 5 秒后自动隐藏。想恢复“启动即显示”，把 `startHidden` 改为 `false`。
 
 ### 桌面快捷方式（默认已创建）
 
@@ -79,31 +79,33 @@ $s.Save()
 - **最小改动**：重写 `renderer/jellyfish.js` 的绘制函数（保持 `Jellyfish.draw(ctx, state, t)` 接口即可，`pet.js`、状态动画、菜单都不用动）
 - **重新生成**：把 [PROMPT.md](PROMPT.md) 发给 AI，它会先问你想要什么形象再开发（保持像素风：Canvas 程序化像素画 + `image-rendering: pixelated`）
 
-## 状态联动（Codex：`~/.codex/sessions/**/rollout-*.jsonl`；OpenCode：`opencode.log` + `prompt-history.jsonl`）
+## 状态联动（Codex：`~/.codex/sessions/**/rollout-*.jsonl`；OpenCode：`opencode.log` + `prompt-history.jsonl`；Claude Code：`~/.claude/projects/**/*.jsonl`）
 
 
-| 状态 | Codex 日志信号（`rollout-*.jsonl`） | OpenCode 日志信号（`opencode.log` + `prompt-history.jsonl`） |
-|---|---|---|
-| 🛋️ 空闲 | 60s 无新事件 | 60s 无新事件 |
-| 👂 收到指令 | `user_message` 事件 | `prompt-history.jsonl` 新增输入 |
-| 🧠 分析中 | `task_started` / `reasoning` / `agent_message` / 工具结果处理 | `message=stream` / `permission=read/task/todowrite/skill` |
-| 💻 写代码中 | `custom_tool_call: apply_patch` | `permission=edit` / `touching file` |
-| ⏳ 运行中 | `function_call: shell_command` | `permission=bash`（含命令详情） |
-| 🔍 搜索中 | `search` / `open_page` / `find_in_page` | `permission=websearch/webfetch/grep/glob` |
-| ✅ 完成 | `task_complete`（8s 后回落空闲） | `exiting loop`（8s 后回落空闲） |
-| ⚠️ 等待审批 | 工具调用带 `require_escalated` / `justification` | `message=asking`（`per_`=批准 / `que_`=回答） |
-| 💤 沉睡 | 15 分钟无任何事件 | 15 分钟无任何事件 |
+| 状态 | Codex 日志信号（`rollout-*.jsonl`） | OpenCode 日志信号（`opencode.log` + `prompt-history.jsonl`） | Claude Code 日志信号（会话 `.jsonl`） |
+|---|---|---|---|
+| 🛋️ 空闲 | 60s 无新事件 | 60s 无新事件 | 60s 无新事件 |
+| 👂 收到指令 | `user_message` 事件 | `prompt-history.jsonl` 新增输入 | `user` 行文本输入（`origin.kind=human`） |
+| 🧠 分析中 | `task_started` / `reasoning` / `agent_message` / 工具结果处理 | `message=stream` / `permission=read/task/todowrite/skill` | `assistant` 的 `thinking`/`text` 块、`tool_result`、`Agent` 工具、`turn_duration` 带 `pendingBackgroundAgentCount` |
+| 💻 写代码中 | `custom_tool_call: apply_patch` | `permission=edit` / `touching file` | `tool_use`: Edit / Write / MultiEdit / NotebookEdit |
+| ⏳ 运行中 | `function_call: shell_command` | `permission=bash`（含命令详情） | `tool_use`: Bash / PowerShell（含命令详情） |
+| 🔍 搜索中 | `search` / `open_page` / `find_in_page` | `permission=websearch/webfetch/grep/glob` | `tool_use`: Read / Grep / Glob / WebSearch / WebFetch |
+| ✅ 完成 | `task_complete`（8s 后回落空闲） | `exiting loop`（8s 后回落空闲） | `turn_duration` 且上一 assistant 行 `stop_reason=end_turn`（8s 后回落空闲） |
+| ⚠️ 等待审批 | 工具调用带 `require_escalated` / `justification` | `message=asking`（`per_`=批准 / `que_`=回答） | `AskUserQuestion` 工具（直接）；或需授权工具无结果超时 `approvalAfterMs`（默认 20s） |
+| 💤 沉睡 | 15 分钟无任何事件 | 15 分钟无任何事件 | 15 分钟无任何事件 |
 
-> 状态详情会带上来源标记：🅒 = Codex，🅞 = OpenCode。
+> ⚠️ **Claude Code 审批的局限**：其日志没有审批信号（等待批准时日志停更，与长命令无法区分），只能用超时启发式——需授权工具（Bash/Edit/…）调用后 `approvalAfterMs` 内无结果即判定“等待审批”。已批准的长命令同样静默，可能误显示“等待审批”，工具结果返回后自动恢复；`approvalAfterMs: 0` 可关闭该启发式。
 
-## 双 CLI 联动（LRU 最后活跃者优先）
+> 状态详情会带上来源标记：🅒 = Codex，🅞 = OpenCode，🄲 = Claude Code。
 
-`config.json` 的 `activeSource: "auto"` 时，两个 CLI 同时运行由**最后活跃者优先**：
+## 三 CLI 联动（LRU 最后活跃者优先）
+
+`config.json` 的 `activeSource: "auto"` 时，三个 CLI 同时运行由**最后活跃者优先**：
 
 1. 谁最后有真实工作事件（分析/写代码/运行/搜索/审批/完成），水母就显示谁
 2. 空闲 / 沉睡**不抢占**对方；当前源空闲时，若另一个正在干活会自动切过去
-3. 详情行前缀标记来源（🅒 Codex / 🅞 OpenCode），时间线同样来自当前活跃源
-4. 也可固定只监听一个：`activeSource: "codex"` 或 `"opencode"`
+3. 详情行前缀标记来源（🅒 Codex / 🅞 OpenCode / 🄲 Claude Code），时间线同样来自当前活跃源
+4. 也可固定只监听一个：`activeSource: "codex"` / `"opencode"` / `"claude"`
 
 逻辑在 `source-router.js`（纯 Node，`npm run router-test` 自测）。
 
@@ -114,7 +116,10 @@ npm run watch      # 终端实时查看状态机推导结果（无需启动桌�
 npm run replay -- <rollout文件>   # 回放历史日志，验证状态推导
 npm run opencode-watch   # 实时查看 OpenCode 状态推导（无需启动桌宠）
 npm run opencode-replay -- <opencode.log>  # 回放 OpenCode 日志验证状态推导
-npm run router-test      # 双源 LRU 切换逻辑自测
+npm run claude-watch     # 实时查看 Claude Code 状态推导（无需启动桌宠）
+npm run claude-replay -- <会话.jsonl>  # 回放 Claude Code 会话日志验证状态推导
+npm run claude-test      # Claude Code 状态机自测
+npm run router-test      # 多源 LRU 切换逻辑自测
 npm run state-test       # Codex 状态机自测（node state-watcher.js --test）
 npm run opencode-test    # OpenCode 状态机自测（node opencode-watcher.js --test）
 npm run preview    # 浏览器打开动画原型（画廊模式 ?gallery=1）
@@ -129,8 +134,8 @@ npm run remind-test # 提醒模块自测（node reminders.js --test）
 |---|---|---|
 | `followMode` | `hide`：Codex 退出后隐藏窗口（托盘常驻）；`quit`：随 Codex 退出 | `hide` |
 | `startHidden` | `true`：启动先隐藏，检测到 Codex 才显示；`false`：启动即显示 | `true` |
-| `detectNames` | 要检测的进程名（任一存在即显示桌宠） | `["codex", "Codex", "opencode"]` |
-| `activeSource` | `auto`：双 CLI 最后活跃者优先；`codex` / `opencode`：固定只监听一个 | `auto` |
+| `detectNames` | 要检测的进程名（任一存在即显示桌宠） | `["codex", "Codex", "opencode", "claude"]` |
+| `activeSource` | `auto`：三 CLI 最后活跃者优先；`codex` / `opencode` / `claude`：固定只监听一个 | `auto` |
 | `pollMs` / `debounceTicks` | 进程检测轮询间隔 / 去抖次数 | `2000` / `2` |
 | `hideDelayMs` | Codex 退出后延迟隐藏窗口的毫秒数 | `5000` |
 | `scale` | 桌宠大小倍率 | `1.0` |
@@ -139,6 +144,7 @@ npm run remind-test # 提醒模块自测（node reminders.js --test）
 | `notify` | 提醒到点是否发系统通知 | `true` |
 | `breakReminderMin` | 摸鱼提醒间隔（分钟），`0` 关闭 | `45` |
 | `breakReminderText` | 摸鱼提醒文案（可自定义） | `🚶 起来活动一下，喝口水吧～` |
+| `approvalAfterMs` | Claude Code 审批启发式超时（毫秒），`0` 关闭 | `20000` |
 
 ## 目录
 
@@ -152,7 +158,8 @@ codex-pet/
 ├─ preload.js         # 安全桥接
 ├─ state-watcher.js   # 日志监听 + 状态机（纯 Node，可独立测试）
 ├─ opencode-watcher.js# OpenCode 日志监听 + 状态机（纯 Node，可独立测试）
-├─ source-router.js   # 双源 LRU 路由（谁在干活显示谁，--test 自测）
+├─ claude-watcher.js  # Claude Code 会话日志监听 + 状态机（纯 Node，可独立测试）
+├─ source-router.js   # 多源 LRU 路由（谁在干活显示谁，--test 自测）
 ├─ codex-watcher.js   # 进程生命周期检测（纯 Node，--probe 可模拟）
 ├─ reminders.js       # 提醒管理器（纯 Node，--test 可自测；待办 + 摸鱼）
 ├─ launcher.js        # 可选守护进程（followMode=quit 时用）
@@ -173,3 +180,4 @@ codex-pet/
 - ✅ Phase 4（2026-08-08）：状态扩展 —— 动态详情（正在跑什么/改哪个文件）+ 最近活动时间线 + 详情面板
 - ✅ Phase 4（2026-08-08）：提醒功能 —— 待办提醒（持久化/系统通知/弹跳动画）+ 摸鱼提醒
 - ✅ Phase 5（2026-08-09）：OpenCode 兼容 —— 新增 `opencode-watcher.js` 并行监听 + `source-router.js` LRU 双源切换（🅒/🅞 来源标记）
+- ✅ Phase 6（2026-08-13）：Claude Code 兼容 —— 新增 `claude-watcher.js` 并行监听（`~/.claude/projects` 会话日志）+ 路由推广为三源 LRU（🄲 来源标记）+ 审批超时启发式
