@@ -11,6 +11,7 @@ const os = require('os');
 const CodexStateWatcher = require('./state-watcher');
 const OpenCodeWatcher = require('./opencode-watcher');
 const ClaudeCodeWatcher = require('./claude-watcher');
+const DshWatcher = require('./dsh-watcher');
 const CodexLifecycleWatcher = require('./codex-watcher');
 const ReminderManager = require('./reminders');
 const SourceRouter = require('./source-router');
@@ -113,6 +114,7 @@ let win = null;
 let stateWatcher = null;
 let openCodeWatcher = null;
 let claudeWatcher = null;
+let dshWatcher = null;
 let lifeWatcher = null;
 let reminders = null;
 let tray = null;
@@ -172,8 +174,8 @@ function saveWindowState() {
 }
 
 // ---------- 状态推送 ----------
-// 来源标记：🅒 Codex / 🅞 OpenCode / 🄲 Claude Code / 无前缀 = 手动
-const SOURCE_BADGES = { codex: '🅒', opencode: '🅞', claude: '🄲' };
+// 来源标记：🅒 Codex / 🅞 OpenCode / 🄲 Claude Code / 🅓 DeepSeek Harness / 无前缀 = 手动
+const SOURCE_BADGES = { codex: '🅒', opencode: '🅞', claude: '🄲', dsh: '🅓' };
 
 function sendState(st) {
   const tag = SOURCE_BADGES[st.source] || '';
@@ -193,6 +195,7 @@ function setManual(s) {
     if (stateWatcher) stateWatcher.forceRefresh();
     if (openCodeWatcher) openCodeWatcher.forceRefresh();
     if (claudeWatcher) claudeWatcher.forceRefresh();
+    if (dshWatcher) dshWatcher.forceRefresh();
   } else {
     const meta = CodexStateWatcher.STATE_META[s] || { label: s, bubble: '' };
     sendState({ state: s, label: meta.label, bubble: meta.bubble, detail: '手动预览', since: Date.now(), manual: true });
@@ -230,8 +233,9 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => {
     if (!win || win.isDestroyed()) return;
-    // startHidden mode: keep hidden at launch, show only after Codex is detected
-    if (config.startHidden && !(lifeWatcher && lifeWatcher.present)) return;
+    // startHidden mode: keep hidden at launch, show only after an agent is detected
+    checkDshPresence(); // 同步刷新 DSH 日志新鲜度，避免启动窗口期误判
+    if (config.startHidden && !(lifeWatcher && lifeWatcher.present) && !dshPresent) return;
     win.showInactive();
   });
 
@@ -466,15 +470,16 @@ function createTray() {
 
 // ---------- Codex 生命周期联动（P0） ----------
 function onCodexStarted() {
-  log('[life] agent detected (codex/opencode/claude)');
+  log('[life] agent detected (codex/opencode/claude/dsh)');
   if (!win || win.isDestroyed()) createWindow();
   else if (!win.isVisible()) win.showInactive();
 }
 
-function onCodexStopped() {
-  log('[life] all agents stopped, followMode=' + config.followMode);
+// 任一 agent 仍活跃则取消隐藏（lifeWatcher 进程检测 + dshPresent 日志新鲜度）
+function scheduleHideIfNoAgent() {
   setTimeout(() => {
     if (!win || win.isDestroyed()) return;
+    if ((lifeWatcher && lifeWatcher.present) || dshPresent) return;
     if (config.followMode === 'quit') {
       app.quit();
       return;
@@ -482,6 +487,32 @@ function onCodexStopped() {
     win.hide();
     hidePanelWindow();
   }, config.hideDelayMs);
+}
+
+function onCodexStopped() {
+  log('[life] all agents stopped, followMode=' + config.followMode);
+  scheduleHideIfNoAgent();
+}
+
+// ---------- DSH 活跃检测：日志新鲜度（任意 session 日志 60s 内有更新 = DSH 在干活） ----------
+const DSH_ACTIVE_WINDOW_MS = 60 * 1000;
+let dshPresent = false;
+let dshPresenceTimer = null;
+
+function checkDshPresence() {
+  if (!dshWatcher) return;
+  const latest = dshWatcher.findLatest();
+  const active = !!(latest && (Date.now() - latest.mtimeMs) < DSH_ACTIVE_WINDOW_MS);
+  if (active === dshPresent) return;
+  dshPresent = active;
+  log('[life] dsh ' + (active ? 'detected (log fresh)' : 'gone (log stale)'));
+  if (active) onCodexStarted();
+  else onCodexStopped();
+}
+
+function startDshPresence() {
+  checkDshPresence();
+  dshPresenceTimer = setInterval(checkDshPresence, config.pollMs || 2000);
 }
 
 // ---------- IPC ----------
@@ -502,7 +533,7 @@ ipcMain.handle('pet:getconfig', () => ({
   showStatusLabel: config.showStatusLabel
 }));
 ipcMain.handle('pet:timeline', () => {
-  const watchers = { codex: stateWatcher, opencode: openCodeWatcher, claude: claudeWatcher };
+  const watchers = { codex: stateWatcher, opencode: openCodeWatcher, claude: claudeWatcher, dsh: dshWatcher };
   const w = router ? watchers[router.getActive()] : null;
   return w ? w.getTimeline() : [];
 });
@@ -607,6 +638,16 @@ if (!app.requestSingleInstanceLock()) {
     });
     claudeWatcher.start();
 
+    // DeepSeek Harness 通道（并行监听，互不干扰）
+    dshWatcher = new DshWatcher({
+      sessionsDir: path.join(os.homedir(), '.dsh', 'sessions')
+    });
+    dshWatcher.on('state', (st) => {
+      log(`[state:dsh] ${st.state} — ${st.label} (${st.detail})`);
+      router.push('dsh', st);
+    });
+    dshWatcher.start();
+
     // 进程生命周期（P0）
     lifeWatcher = new CodexLifecycleWatcher({
       names: config.detectNames,
@@ -616,6 +657,7 @@ if (!app.requestSingleInstanceLock()) {
     lifeWatcher.on('started', onCodexStarted);
     lifeWatcher.on('stopped', onCodexStopped);
     lifeWatcher.start();
+    startDshPresence();
 
     // 冒烟测试：启动 6s 后退出
     if (process.argv.includes('--smoke')) {

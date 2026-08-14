@@ -164,17 +164,31 @@
 3. 主进程接入：`SOURCE_BADGES` map（🅒/🅞/🄲）、`pet:timeline` 改 watcher lookup map、`setManual(null)` 三通道 forceRefresh、`detectNames` + `claude`、`approvalAfterMs` 热更新
 4. 渲染层/preload **零改动**（只认 9 个共享状态）
 
+### Phase 8 —— DeepSeek Harness (DSH) 兼容（2026-08-14）
+1. 新增 `dsh-watcher.js`：并行监听 `~/.dsh/sessions/**/session.jsonl.zstd`（`--test` 26 例 / `--replay` / `--live`）
+   - 数据源：DSH 持久化后端把会话事件写成"仅追加 JSONL"，默认 **zstd 压缩**——第一个 frame 是 header 行，之后每个 append 批次一个独立带 checksum 的 frame（写入批处理窗口 ≤200ms，轮询读尾部即可，与 Codex 同等实时性）
+   - ✅ **Electron 33 内置 Node 20 没有 zstd API**（DSH 用 Node 24 内置 Zstandard）→ 加纯 JS 依赖 `fzstd`：`decompress()` 一次性支持多 frame 拼接；`Decompress` 流式类需要 `ondata` 回调（`push()` 不返回数据，实测 API 差异）
+   - ✅ **zstd 帧必须从头解析**（无法像明文 JSONL 那样回看尾部）→ 增量读取只处理"已处理字节偏移起的完整 frame"：按标准 zstd frame 布局扫描边界（magic + descriptor + FCS + block 头 + 可选 checksum），撕裂尾部（torn frame）跳过等下一轮补全，与 DSH 崩溃恢复语义兼容
+   - 事件类型（SessionEvent）：`session`(header) / `permission/preset` / `sandbox/mode` / `approval/policy` / `agent/inbox/spliced` / `turn/start` / `step/start` / `user/message` / `request/header` / `assistant/chunk` / `reasoning-chunks` / `text-chunks` / `tool-call-chunks`（打包分片行：seq0/time0/dt 压缩 delta，只作"正在输出"信号用，detail 等完整行） / `assistant/message` / `step/end` / `turn/end` / `tool/call` / `tool/result`
+   - 映射：`user/message` / `agent/inbox/spliced` → 收到指令（2.5s 后转分析中）；`turn/start` / `reasoning-chunks` / `text-chunks` / `tool-call-chunks` → 分析中；`tool/call` name=write/edit → 写代码中（detail 取 `file_path`）；pwsh → 运行中（detail 取 `command`）；web_search → 搜索中（detail 取 `query`）；glob/grep/read → 搜索中（detail 取 `pattern`/`path`）；`ask_user_question` → **等待审批**（✅ 显式信号，比 Claude 超时启发式精确）；`subagent`/`workflow` → 分析中；`turn/end` reason.kind=completed → 完成（8s 回落空闲）；60s 静默 → 空闲（工作状态不回落）；15min → 沉睡
+   - ✅ **审批 denied 文本启发只匹配 DSH 官方沙箱拒绝格式** `[sandbox: file access denied under <mode> mode]`：裸词 denied/blocked/approval 一律不匹配——命令输出、自测文本都可能含这些词（实测踩坑），误报宁可没有（状态随后续事件自动恢复）
+2. **活跃检测不走进程检测**：DSH 是 node 进程（进程名不唯一，`Get-Process -Name node` 会误伤）→ **日志新鲜度**：任意 `session.jsonl.zstd` 的 mtime 在 60s 内有更新 = DSH 在干活；与进程检测的 `startHidden`/`followMode` 逻辑合并（任一 agent 存在即显示 / 全无才隐藏，隐藏前复查组合状态）
+3. `source-router.js` 已是 N 源通用实现（代码零改动），只补 dsh 自测场景：四源顶掉 / 空闲回退 / 固定源 `fixed: 'dsh'` / 🅓 来源标记；`SOURCE_BADGES` 加 `dsh: '🅓'`；`pet:timeline` 的 watcher map 加 dsh
+4. 渲染层/preload **零改动**（只认 9 个共享状态）；`config.activeSource` 支持 `"dsh"` 固定源
+5. ✅ **踩坑：CLI 分支 `new Watcher().start()` 会同步执行首次 poll**——backfill 结束 emit 的状态事件在 `on('state')` 注册**之前**就发出，`--live` 启动后看不到任何输出 → 先注册监听再 `start()`（诊断脚本有输出、CLI 没输出的经典症状）
+
 ## 四、项目结构（交付模板）
 
 ```
 your-pet/
-├─ package.json        # main: main.js; devDependencies: electron
+├─ package.json        # main: main.js; devDependencies: electron; dependencies: fzstd
 ├─ config.json         # 联动模式/检测名/音效/皮肤/大小
 ├─ main.js             # Electron 主进程（桌宠窗口/独立面板窗口/托盘/菜单/IPC/启停/热更新）
 ├─ preload.js          # contextBridge 桥接
 ├─ state-watcher.js    # Codex 日志监听 + 状态机（--test 自测 / --replay 回放）
 ├─ opencode-watcher.js # OpenCode 日志监听 + 状态机（--test 自测 / --replay 回放）
 ├─ claude-watcher.js   # Claude Code 会话日志监听 + 状态机（--test 自测 / --replay 回放）
+├─ dsh-watcher.js      # DeepSeek Harness 会话日志监听 + 状态机（fzstd 解压 zstd，--test/--replay/--live）
 ├─ source-router.js    # 多源 LRU 路由（谁在干活显示谁，--test 自测）
 ├─ codex-watcher.js    # 进程生命周期检测（--probe 可模拟测试）
 ├─ reminders.js        # 提醒管理器（纯 Node，--test 可自测；待办 + 摸鱼）
@@ -193,7 +207,8 @@ your-pet/
 2. `node state-watcher.js --replay <真实日志>` 回放验证状态推导（✅ 能看出每个状态对应的日志事件）
 2.5 `node reminders.js --test` 提醒自测（添加 0.05 分钟提醒，验证到期触发 + 持久化）
 2.6 `node state-watcher.js --test` 与 `node opencode-watcher.js --test`（各 17 例：指令/分析/写码/运行/搜索/审批/完成/坏行容错/文件名提取/静默回落/沉睡）
-2.7 `node claude-watcher.js --test`（24 例，含审批超时启发式、subagents 排除、回合完成判定）与 `node source-router.js --test`（12 场景）
+2.7 `node claude-watcher.js --test`（24 例，含审批超时启发式、subagents 排除、回合完成判定）与 `node source-router.js --test`（16 场景，含四源 dsh）
+2.8 `node dsh-watcher.js --test`（26 例：指令/分析/写码/运行/搜索/审批(ask_user_question + 官方沙箱格式)/完成/打包行/子智能体/坏行容错/静默回落/沉睡/帧扫描+撕裂尾部/denied 反误报）与 `node dsh-watcher.js --replay <session.jsonl.zstd>` 回放真实日志验证
 3. 去抖单测：注入模拟探测器，验证"连续 2 次一致才触发、抖动不误报"
 4. `electron . --smoke` 冒烟测试（自动退出，验证窗口/状态机/生命周期/托盘初始化无崩溃）
 5. 真机验收：
@@ -245,6 +260,10 @@ your-pet/
 | 26 | 重启命令中断导致双开 | 两个桌宠实例并存（9 个 electron 进程） | 重启前按进程路径过滤全部停止，再启唯一实例 |
 | 27 | Claude Code 日志无审批信号 | 等待批准与长命令执行日志同样停更，无法区分 | 超时启发式 `approvalAfterMs`（只读工具不武装）；且只有 `user` 类行清计时（assistant 行后紧跟的 turn_duration 不能清） |
 | 28 | 子智能体日志劫持"最新 mtime" | 父会话静默期间子智能体文件增长，选错文件 | 文件发现排除 `subagents/`/`tool-results/` 目录段 + 只认 UUID 命名 `.jsonl` |
+| 29 | Electron(Node 20) 无内置 zstd | DSH 的 `session.jsonl.zstd` 解不开（DSH 用 Node 24 内置 Zstandard） | 纯 JS 依赖 `fzstd`：`decompress()` 支持多 frame 拼接；流式 `Decompress` 类要 `ondata` 回调 |
+| 30 | DSH 进程名不唯一（node） | `Get-Process` 无法可靠检测 DSH 活跃 | 日志新鲜度：任意 `session.jsonl.zstd` mtime 60s 内有更新 = 活跃；隐藏前复查进程+日志组合状态 |
+| 31 | denied 文本启发误报 | 命令/自测输出含 denied 等词 → 误显"等待审批" | 只匹配 DSH 官方沙箱拒绝格式 `[sandbox: …denied under …]`，裸词一律不匹配 |
+| 32 | CLI 分支丢首状态事件 | `--live` 启动后无任何输出（诊断脚本却有） | 先 `on('state')` 再 `start()`：`start()` 同步执行首次 poll，backfill 结束的 emit 会先于监听注册 |
 
 ## 七、扩展建议（做成"你自己的"）
 

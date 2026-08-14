@@ -181,6 +181,43 @@ if (require.main === module && process.argv.includes('--test')) {
     assert(last && last.source === 'claude' && last.detail === '搜索: x', 'change 事件 source=claude');
   }
 
+  console.log('== 场景 13（四源）：DSH 干活顶掉其余源 ==');
+  {
+    const r = new SourceRouter();
+    r.push('codex', st('idle'));
+    r.push('opencode', st('idle'));
+    r.push('claude', st('idle'));
+    r.push('dsh', st('running'));
+    assert(r.getActive() === 'dsh', 'active=dsh');
+  }
+
+  console.log('== 场景 14（四源）：DSH 空闲后回退到仍在工作的源 ==');
+  {
+    const r = new SourceRouter();
+    r.lastActive = { codex: 1000, dsh: 2000 };
+    r.push('codex', st('running'));
+    r.push('dsh', st('searching'));
+    r.push('dsh', st('idle'));
+    assert(r.getActive() === 'codex', 'dsh 空闲 → 回退到仍在工作的 codex');
+  }
+
+  console.log('== 场景 15（四源）：固定 activeSource=dsh 时忽略其余源 ==');
+  {
+    const r = new SourceRouter({ fixed: 'dsh' });
+    r.push('codex', st('coding'));
+    r.push('opencode', st('running'));
+    assert(r.getActive() === 'dsh', 'active=dsh（固定源，其余推送被忽略）');
+  }
+
+  console.log('== 场景 16（四源）：change 事件带 dsh source 标记 ==');
+  {
+    const r = new SourceRouter();
+    let last = null;
+    r.on('change', (s) => { last = s; });
+    r.push('dsh', st('searching', '搜索: x'));
+    assert(last && last.source === 'dsh' && last.detail === '搜索: x', 'change 事件 source=dsh');
+  }
+
   console.log(fail === 0 ? '\nALL PASS ✅' : `\n${fail} FAILED ❌`);
   process.exit(fail === 0 ? 0 : 1);
 }

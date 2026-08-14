@@ -13,6 +13,9 @@
     "claude-watch": "node claude-watcher.js --live",
     "claude-replay": "node claude-watcher.js --replay",
     "claude-test": "node claude-watcher.js --test",
+    "dsh-watch": "node dsh-watcher.js --live",
+    "dsh-replay": "node dsh-watcher.js --replay",
+    "dsh-test": "node dsh-watcher.js --test",
     "router-test": "node source-router.js --test",
     "remind-test": "node reminders.js --test",
     "state-test": "node state-watcher.js --test",
@@ -23,5 +26,8 @@
   },
   "devDependencies": {
     "electron": "^33.2.0"
+  },
+  "dependencies": {
+    "fzstd": "^0.1.1"
   }
 }

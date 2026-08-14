@@ -13,7 +13,7 @@
   "showStatusLabel": true,
   "sound": true,
   "scale": 1,
-  "theme": "sakura",
+  "theme": "default",
   "startHidden": true,
   "notify": true,
   "breakReminderMin": 45,
