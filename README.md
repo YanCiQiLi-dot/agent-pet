@@ -1,28 +1,36 @@
-# 🪼 Codex / OpenCode / Claude Code / DeepSeek Harness 像素水母桌宠
+<p align="center">
+  <a href="README.md"><b>English</b></a> · <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-一只悬浮在桌面角落、会**真实反映 Codex、OpenCode、Claude Code 与 DeepSeek Harness（DSH）工作状态**的像素风小水母。
-四个 CLI 可同时联动：谁在干活就显示谁（LRU 最后活跃者优先，详见下文「多 CLI 联动」）。
+# 🪼 Agent Pet — a pixel jellyfish desktop pet for Codex / OpenCode / Claude Code / DeepSeek Harness
 
-> 🐾 **形象可自定义**：本项目的开发 Prompt（[PROMPT.md](PROMPT.md)）要求开工前先询问你想要什么**像素风**形象（水母 / 小猫 / 小狗 / 狐狸 / 幽灵 / 机器人 / 恐龙 / 蘑菇…，未指定默认水母），所以随时可以让 AI 按它重做一个你喜欢的角色。
+A pixel-art jellyfish floating in the corner of your desktop that **reflects the real-time working state of Codex, OpenCode, Claude Code, and DeepSeek Harness (DSH)**.
+All four CLIs can run simultaneously — it shows whoever is working (LRU last-active-wins, see [Multi-CLI Linkage](#multi-cli-linkage-lru-last-active-wins) below).
 
-## 运行
+<p align="center">
+  <img src="assets/gallery.png" alt="Agent Pet — all nine states" width="800">
+</p>
+
+> 🐾 **Customizable appearance**: the project's development prompt ([PROMPT.md](PROMPT.md)) asks which pixel-art character you want *before* it starts building (jellyfish / cat / dog / fox / ghost / robot / dinosaur / mushroom …, jellyfish by default), so you can always have an AI rebuild it into your favorite character.
+
+## Run
 
 ```bash
-cd D:\codex-pet
-npm install        # 首次需要（下载 Electron）
-npm start          # 启动桌宠
+cd agent-pet
+npm install        # first run only (downloads Electron)
+npm start          # launch the pet
 ```
 
-> 💡 **已配置开机自启**：启动文件夹里的 `Codex桌宠.lnk` 会在登录后自动拉起桌宠（`startHidden` 下先藏在托盘、不弹窗）。删除该快捷方式即可取消自启。
-> 💡 **桌面快捷方式**：桌面已固定创建 `Codex桌宠.lnk`，双击即可启动（等价 `npm start`），详见下文「桌面快捷方式」。
-> 💡 **默认只跟随 CLI 出现**（`config.json` 的 `startHidden: true`）：启动后先在托盘待命，检测到 Codex / OpenCode / Claude Code 任一进程才显示；全部退出 5 秒后自动隐藏。想恢复“启动即显示”，把 `startHidden` 改为 `false`。
+> 💡 **Auto-start on login**: a `Codex桌宠.lnk` shortcut in the Startup folder launches the pet on login (with `startHidden`, it waits in the tray without popping up). Delete the shortcut to disable.
+> 💡 **Desktop shortcut**: a `Codex桌宠.lnk` is pinned to the desktop for one-click launch (same as `npm start`). See "Desktop Shortcut" below.
+> 💡 **Follows the CLI by default** (`config.json` → `startHidden: true`): it waits in the tray and only appears when a Codex / OpenCode / Claude Code process is detected; hides 5 seconds after they all exit. Set `startHidden` to `false` to always show on launch.
 
-### 桌面快捷方式（默认已创建）
+### Desktop Shortcut (optional)
 
-本项目交付时会在桌面**固定创建** `Codex桌宠.lnk`，双击即可启动（等价 `npm start`），无需每次进目录敲命令。快捷方式丢失或被删除时，用下面命令一键重建：
+The project ships with a desktop shortcut `Codex桌宠.lnk` for one-click launch (equivalent to `npm start`) — no need to cd into the directory every time. If the shortcut is lost or deleted, recreate it with:
 
 ```powershell
-$desktop = [Environment]::GetFolderPath('Desktop')   # 自动获取真实桌面（兼容 OneDrive 重定向）
+$desktop = [Environment]::GetFolderPath('Desktop')   # auto-resolves the real desktop (handles OneDrive redirection)
 $lnk  = Join-Path $desktop 'Codex桌宠.lnk'
 $ws   = New-Object -ComObject WScript.Shell
 $s    = $ws.CreateShortcut($lnk)
@@ -32,161 +40,165 @@ $s.WorkingDirectory = 'D:\codex-pet'
 $s.Save()
 ```
 
-双击桌面的 **Codex桌宠** 即可启动桌宠；删除该快捷方式不影响开机自启。
+Double-click the desktop **Codex桌宠** icon to launch; deleting the shortcut does not affect auto-start on login.
 
+## Interaction
 
-## 交互
+- **Drag**: hold the jellyfish to move it anywhere (position is remembered)
+- **Single click**: poke it to make it bubble
+- **Double click**: open the **standalone panel** (next to the pet; draggable / resizable, tabs for recent activity / reminders)
+- **Right click**: manually switch state / back to auto-linkage / reload / quit
+- **Right click ⏰ Reminder**: 💧 drink water / 🚶 take a walk quick reminders, custom text, 5/15/30/60 min, manage, clear all
+- **Right click 🎨 Theme**: blue-purple (default) / sakura pink / ocean blue one-click switch (persisted to `config.json`)
+- **Tray**: resident tray icon; double-click to show/hide, right-click for manual state / reminders / quit
+- **Transparent areas don't block the mouse**: the pet only captures the mouse on the canvas / panel; surrounding transparent areas (especially below) click through to the window underneath
 
-- **拖动**：按住水母拖动到任意位置（位置会被记住）
-- **单击**：戳一戳冒气泡
-- **双击**：打开**独立面板窗口**（桌宠旁，可拖动/缩放，标签页切换最近活动 / 待办提醒，详见下文「状态详情与提醒」）
-- **右键**：手动切换状态 / 回到自动联动 / 重新加载 / 退出
-- **右键 ⏰ 提醒**：💧 喝水 / 🚶 走一走 快捷提醒、自定义内容、5/15/30/60 分钟、查看管理、清空全部
-- **右键 🎨 外观主题**：蓝紫（默认）/ 樱花粉 / 海洋蓝 一键切换（写入 config.json 持久化）
-- **托盘**：右下角托盘图标常驻；双击显示/隐藏，右键可手动切状态/设置提醒/退出
-- **透明区域不挡鼠标**：桌宠只在画布/详情面板上接收鼠标，四周透明区域（尤其下方）会点击穿透到下层窗口
+## Status Details & Reminders
 
-## 状态详情与提醒（B+C 拓展）
+### 🕒 Live detail
 
-### 🕒 动态详情
-桌宠状态标签下方会实时显示"正在干什么"（不弹气泡、不打扰）：
+Below the status label, the pet shows in real time "what it's doing" (no popup, no interruption):
 
-| 状态 | 详情示例 |
+| State | Example detail |
 |---|---|
-| 💻 写代码中 | `📝 修改: main.js, config.json 等 3 个文件` |
-| ⏳ 运行中 | `正在跑: npm test` |
-| 🔍 搜索中 | `搜索: Codex API 文档` |
-| ⚠️ 等待审批 | `需要你批准：允许我下载依赖…` |
-| 🤖 分析中 | `协调子智能体…` |
+| 💻 Coding | `📝 editing: main.js, config.json … (3 files)` |
+| ⏳ Running | `running: npm test` |
+| 🔍 Searching | `searching: Codex API docs` |
+| ⚠️ Awaiting approval | `needs your approval: allow downloading dependencies…` |
+| 🤖 Analyzing | `coordinating sub-agents…` |
 
-### 🕒 最近活动时间线
-双击水母打开详情面板，可以看到最近 **10 条**工具活动（改文件/跑命令/搜索/审批/子智能体），最新在最上。
+### 🕒 Recent activity timeline
 
-### ⏰ 待办提醒
-- **添加**：右键 → `⏰ 提醒`（5/15/30/60 分钟 / 自定义）；或双击水母在面板底部快速添加
-- **到点**：水母弹跳 + 气泡 + 音效 + 系统通知（`config.json` 的 `notify` 可关）
-- **持久化**：提醒存 `%APPDATA%\codex-pet\reminders.json`，重启桌宠不丢
-- **管理**：面板内可单条删除；右键菜单可清空全部
+Double-click the jellyfish to open the panel and see the last **10** tool activities (file edits / commands / searches / approvals / sub-agents), newest first.
 
-### 🚶 摸鱼提醒
-`config.json` 的 `breakReminderMin`（默认 `45` 分钟）到点提醒你起来活动；设为 `0` 关闭。
-`breakReminderText` 可自定义摸鱼提醒文案（默认 `🚶 起来活动一下，喝口水吧～`）。
+### ⏰ To-do reminders
 
-## 自定义形象
+- **Add**: right click → `⏰ Reminder` (5/15/30/60 min / custom); or double-click and add quickly at the bottom of the panel
+- **When due**: bounce + bubble + sound + system notification (disable via `notify` in `config.json`)
+- **Persistent**: stored in `%APPDATA%\codex-pet\reminders.json`, survives restart
+- **Manage**: delete individually in the panel; clear all via the right-click menu
 
-当前形象是像素小水母（默认）。想换一个像素风角色：
+### 🚶 Break reminder
 
-- **最小改动**：重写 `renderer/jellyfish.js` 的绘制函数（保持 `Jellyfish.draw(ctx, state, t)` 接口即可，`pet.js`、状态动画、菜单都不用动）
-- **重新生成**：把 [PROMPT.md](PROMPT.md) 发给 AI，它会先问你想要什么形象再开发（保持像素风：Canvas 程序化像素画 + `image-rendering: pixelated`）
+`breakReminderMin` (default `45` min) reminds you to get up and move; set to `0` to disable.
+`breakReminderText` customizes the message (default `🚶 起来活动一下，喝口水吧～`).
 
-## 状态联动（Codex：`~/.codex/sessions/**/rollout-*.jsonl`；OpenCode：`opencode.log` + `prompt-history.jsonl`；Claude Code：`~/.claude/projects/**/*.jsonl`；DSH：`~/.dsh/sessions/**/session.jsonl.zstd`）
+## Customize the Appearance
 
+The current character is the pixel jellyfish (default). To switch to another pixel character:
 
-| 状态 | Codex 日志信号（`rollout-*.jsonl`） | OpenCode 日志信号（`opencode.log` + `prompt-history.jsonl`） | Claude Code 日志信号（会话 `.jsonl`） | DeepSeek Harness 信号（`session.jsonl.zstd`） |
+- **Minimal change**: rewrite the draw function in `renderer/jellyfish.js` (keep the `Jellyfish.draw(ctx, state, t)` interface — `pet.js`, the state animations, and the menu all stay untouched)
+- **Regenerate**: hand [PROMPT.md](PROMPT.md) to any AI; it will first ask which character you want, then build it (pixel style: programmatic canvas pixel art + `image-rendering: pixelated`)
+
+## State Linkage
+
+Log sources — Codex: `~/.codex/sessions/**/rollout-*.jsonl`; OpenCode: `opencode.log` + `prompt-history.jsonl`; Claude Code: `~/.claude/projects/**/*.jsonl`; DSH: `~/.dsh/sessions/**/session.jsonl.zstd`.
+
+| State | Codex signal (`rollout-*.jsonl`) | OpenCode signal (`opencode.log` + `prompt-history.jsonl`) | Claude Code signal (session `.jsonl`) | DeepSeek Harness signal (`session.jsonl.zstd`) |
 |---|---|---|---|---|
-| 🛋️ 空闲 | 60s 无新事件 | 60s 无新事件 | 60s 无新事件 | 60s 无新事件 |
-| 👂 收到指令 | `user_message` 事件 | `prompt-history.jsonl` 新增输入 | `user` 行文本输入（`origin.kind=human`） | `user/message`、`agent/inbox/spliced` |
-| 🧠 分析中 | `task_started` / `reasoning` / `agent_message` / 工具结果处理 | `message=stream` / `permission=read/task/todowrite/skill` | `assistant` 的 `thinking`/`text` 块、`tool_result`、`Agent` 工具、`turn_duration` 带 `pendingBackgroundAgentCount` | `turn/start`、`reasoning-chunks`、`text-chunks`、`tool-call-chunks`、`subagent`/`workflow` 工具 |
-| 💻 写代码中 | `custom_tool_call: apply_patch` | `permission=edit` / `touching file` | `tool_use`: Edit / Write / MultiEdit / NotebookEdit | `tool/call`: write / edit / patch（含文件名） |
-| ⏳ 运行中 | `function_call: shell_command` | `permission=bash`（含命令详情） | `tool_use`: Bash / PowerShell（含命令详情） | `tool/call`: pwsh（含命令详情） |
-| 🔍 搜索中 | `search` / `open_page` / `find_in_page` | `permission=websearch/webfetch/grep/glob` | `tool_use`: Read / Grep / Glob / WebSearch / WebFetch | `tool/call`: web_search / glob / grep / read |
-| ✅ 完成 | `task_complete`（8s 后回落空闲） | `exiting loop`（8s 后回落空闲） | `turn_duration` 且上一 assistant 行 `stop_reason=end_turn`（8s 后回落空闲） | `turn/end`（`reason.kind=completed`，8s 后回落空闲） |
-| ⚠️ 等待审批 | 工具调用带 `require_escalated` / `justification` | `message=asking`（`per_`=批准 / `que_`=回答） | `AskUserQuestion` 工具（直接）；或需授权工具无结果超时 `approvalAfterMs`（默认 20s） | `tool/call`: ask_user_question（直接）；或 `tool/result` 含 DSH 官方沙箱拒绝格式 `[sandbox: …denied…]` |
-| 💤 沉睡 | 15 分钟无任何事件 | 15 分钟无任何事件 | 15 分钟无任何事件 | 15 分钟无任何事件 |
+| 🛋️ Idle | no events for 60s | no events for 60s | no events for 60s | no events for 60s |
+| 👂 Received | `user_message` event | new input in `prompt-history.jsonl` | `user` text line (`origin.kind=human`) | `user/message`, `agent/inbox/spliced` |
+| 🧠 Analyzing | `task_started` / `reasoning` / `agent_message` / tool-result processing | `message=stream` / `permission=read/task/todowrite/skill` | `assistant` `thinking`/`text` blocks, `tool_result`, `Agent` tool, `turn_duration` with `pendingBackgroundAgentCount` | `turn/start`, `reasoning-chunks`, `text-chunks`, `tool-call-chunks`, `subagent`/`workflow` tools |
+| 💻 Coding | `custom_tool_call: apply_patch` | `permission=edit` / `touching file` | `tool_use`: Edit / Write / MultiEdit / NotebookEdit | `tool/call`: write / edit / patch (with filename) |
+| ⏳ Running | `function_call: shell_command` | `permission=bash` (with command detail) | `tool_use`: Bash / PowerShell (with command detail) | `tool/call`: pwsh (with command detail) |
+| 🔍 Searching | `search` / `open_page` / `find_in_page` | `permission=websearch/webfetch/grep/glob` | `tool_use`: Read / Grep / Glob / WebSearch / WebFetch | `tool/call`: web_search / glob / grep / read |
+| ✅ Done | `task_complete` (falls back to idle after 8s) | `exiting loop` (8s) | `turn_duration` with previous `assistant` line `stop_reason=end_turn` (8s) | `turn/end` (`reason.kind=completed`, 8s) |
+| ⚠️ Awaiting approval | tool call with `require_escalated` / `justification` | `message=asking` (`per_`=approve / `que_`=answer) | `AskUserQuestion` tool (direct); or an authorization-required tool with no result within `approvalAfterMs` (default 20s) | `tool/call`: ask_user_question (direct); or `tool/result` containing the DSH sandbox denial format `[sandbox: …denied…]` |
+| 💤 Sleeping | no events for 15 min | no events for 15 min | no events for 15 min | no events for 15 min |
 
-> ⚠️ **Claude Code 审批的局限**：其日志没有审批信号（等待批准时日志停更，与长命令无法区分），只能用超时启发式——需授权工具（Bash/Edit/…）调用后 `approvalAfterMs` 内无结果即判定“等待审批”。已批准的长命令同样静默，可能误显示“等待审批”，工具结果返回后自动恢复；`approvalAfterMs: 0` 可关闭该启发式。
+> ⚠️ **Claude Code approval limitation**: its logs have no approval signal (while waiting for approval the log stops, indistinguishable from a long command), so we use a timeout heuristic — after an authorization-required tool (Bash/Edit/…) is invoked with no result within `approvalAfterMs`, it's judged as "awaiting approval". An already-approved long command is likewise silent and may be misread as "awaiting approval"; it recovers automatically once the tool result returns. Set `approvalAfterMs: 0` to disable the heuristic.
 
-> 💡 **DSH 日志格式**：会话日志是 zstd 压缩的 JSONL（每个追加批次一个独立 frame，带 checksum，写入批处理窗口 ≤200ms），由 `dsh-watcher.js` 用纯 JS 的 `fzstd` 增量解压；状态推导与其余源同架构，`npm run dsh-replay -- <session.jsonl.zstd>` 可回放验证。
+> 💡 **DSH log format**: session logs are zstd-compressed JSONL (each appended batch is an independent frame with a checksum, write batch window ≤200ms), incrementally decompressed by `dsh-watcher.js` using pure-JS `fzstd`; state derivation follows the same architecture as the other sources. `npm run dsh-replay -- <session.jsonl.zstd>` replays for verification.
 
-> 状态详情会带上来源标记：🅒 = Codex，🅞 = OpenCode，🄲 = Claude Code，🅓 = DeepSeek Harness。
+> State details carry a source badge: 🅒 = Codex, 🅞 = OpenCode, 🄲 = Claude Code, 🅓 = DeepSeek Harness.
 
-## 多 CLI 联动（LRU 最后活跃者优先）
+## Multi-CLI Linkage (LRU last-active-wins)
 
-`config.json` 的 `activeSource: "auto"` 时，四个 CLI 同时运行由**最后活跃者优先**：
+When `config.json` has `activeSource: "auto"`, the four CLIs running simultaneously are resolved by **last-active-wins**:
 
-1. 谁最后有真实工作事件（分析/写代码/运行/搜索/审批/完成），水母就显示谁
-2. 空闲 / 沉睡**不抢占**对方；当前源空闲时，若另一个正在干活会自动切过去
-3. 详情行前缀标记来源（🅒 Codex / 🅞 OpenCode / 🄲 Claude Code / 🅓 DeepSeek Harness），时间线同样来自当前活跃源
-4. 也可固定只监听一个：`activeSource: "codex"` / `"opencode"` / `"claude"` / `"dsh"`
+1. Whichever source last had a real work event (analyzing / coding / running / searching / approval / done) is the one the jellyfish shows
+2. Idle / sleeping sources **do not preempt** others; if the current source goes idle while another is working, it auto-switches
+3. The detail line is prefixed with the source badge (🅒 Codex / 🅞 OpenCode / 🄲 Claude Code / 🅓 DeepSeek Harness); the timeline likewise comes from the current active source
+4. You can also pin a single source: `activeSource: "codex"` / `"opencode"` / `"claude"` / `"dsh"`
 
-逻辑在 `source-router.js`（纯 Node，`npm run router-test` 自测）。
+The logic lives in `source-router.js` (pure Node, `npm run router-test` self-test).
 
-> 💡 **DSH 的"在不在干活"检测**：DSH 以 node 进程运行（进程名不唯一），桌宠改用**日志新鲜度**判定——任意 `session.jsonl.zstd` 在最近 60s 内有更新即认为 DSH 活跃（显示桌宠），消失 5s 后隐藏（`hideDelayMs`），与进程检测的 `startHidden` / `followMode` 逻辑无缝衔接。
+> 💡 **DSH "is-it-working" detection**: DSH runs as a node process (its process name isn't unique), so the pet uses **log freshness** instead — if any `session.jsonl.zstd` has been updated in the last 60s, DSH is considered active (pet shows); it hides 5s after the logs stop (`hideDelayMs`), integrating seamlessly with the process-detection `startHidden` / `followMode` logic.
 
-## 调试工具
+## Debug Tools
 
 ```bash
-npm run watch      # 终端实时查看状态机推导结果（无需启动桌宠）
-npm run replay -- <rollout文件>   # 回放历史日志，验证状态推导
-npm run opencode-watch   # 实时查看 OpenCode 状态推导（无需启动桌宠）
-npm run opencode-replay -- <opencode.log>  # 回放 OpenCode 日志验证状态推导
-npm run claude-watch     # 实时查看 Claude Code 状态推导（无需启动桌宠）
-npm run claude-replay -- <会话.jsonl>  # 回放 Claude Code 会话日志验证状态推导
-npm run claude-test      # Claude Code 状态机自测
-npm run dsh-watch        # 实时查看 DeepSeek Harness 状态推导（无需启动桌宠）
-npm run dsh-replay -- <session.jsonl.zstd>  # 回放 DSH 会话日志验证状态推导
-npm run dsh-test         # DeepSeek Harness 状态机自测
-npm run router-test      # 多源 LRU 切换逻辑自测
-npm run state-test       # Codex 状态机自测（node state-watcher.js --test）
-npm run opencode-test    # OpenCode 状态机自测（node opencode-watcher.js --test）
-npm run preview    # 浏览器打开动画原型（画廊模式 ?gallery=1）
-npm run remind-test # 提醒模块自测（node reminders.js --test）
+npm run watch      # live view of state-machine derivation in the terminal (no pet needed)
+npm run replay -- <rollout file>   # replay historical logs to verify state derivation
+npm run opencode-watch   # live view of OpenCode state derivation (no pet needed)
+npm run opencode-replay -- <opencode.log>  # replay OpenCode logs to verify state derivation
+npm run claude-watch     # live view of Claude Code state derivation (no pet needed)
+npm run claude-replay -- <session.jsonl>  # replay a Claude Code session log to verify state derivation
+npm run claude-test      # Claude Code state-machine self-test
+npm run dsh-watch        # live view of DeepSeek Harness state derivation (no pet needed)
+npm run dsh-replay -- <session.jsonl.zstd>  # replay a DSH session log to verify state derivation
+npm run dsh-test         # DeepSeek Harness state-machine self-test
+npm run router-test      # multi-source LRU switching logic self-test
+npm run state-test       # Codex state-machine self-test (node state-watcher.js --test)
+npm run opencode-test    # OpenCode state-machine self-test (node opencode-watcher.js --test)
+npm run preview          # open the animation prototype in the browser (gallery mode ?gallery=1)
+npm run remind-test      # reminder module self-test (node reminders.js --test)
 ```
 
-> 🔄 **配置热更新**：修改 `config.json` 后无需重启桌宠，约 0.3 秒后自动生效（皮肤 / 音效 / 状态标签 / 缩放 / 检测进程名 / 轮询间隔 / 摸鱼提醒等）。桌宠日志超过 2MB 会自动轮转保留 `.1`。
+> 🔄 **Config hot-reload**: editing `config.json` takes effect ~0.3s later without restarting the pet (skin / sound / status label / scale / detected process names / poll interval / break reminder, etc.). Pet logs auto-rotate at 2MB keeping a `.1` backup.
 
-## 配置（config.json）
+## Config (`config.json`)
 
-| 键 | 说明 | 当前值 |
+| Key | Description | Current value |
 |---|---|---|
-| `followMode` | `hide`：Codex 退出后隐藏窗口（托盘常驻）；`quit`：随 Codex 退出 | `hide` |
-| `startHidden` | `true`：启动先隐藏，检测到 Codex 才显示；`false`：启动即显示 | `true` |
-| `detectNames` | 要检测的进程名（任一存在即显示桌宠） | `["codex", "Codex", "opencode", "claude"]` |
-| `activeSource` | `auto`：四 CLI 最后活跃者优先；`codex` / `opencode` / `claude` / `dsh`：固定只监听一个 | `auto` |
-| `pollMs` / `debounceTicks` | 进程检测轮询间隔 / 去抖次数 | `2000` / `2` |
-| `hideDelayMs` | Codex 退出后延迟隐藏窗口的毫秒数 | `5000` |
-| `scale` | 桌宠大小倍率 | `1.0` |
-| `theme` | 皮肤（default/sakura/ocean…） | `default` |
-| `sound` / `showStatusLabel` | 音效 / 状态标签开关 | `true` |
-| `notify` | 提醒到点是否发系统通知 | `true` |
-| `breakReminderMin` | 摸鱼提醒间隔（分钟），`0` 关闭 | `45` |
-| `breakReminderText` | 摸鱼提醒文案（可自定义） | `🚶 起来活动一下，喝口水吧～` |
-| `approvalAfterMs` | Claude Code 审批启发式超时（毫秒），`0` 关闭 | `20000` |
+| `followMode` | `hide`: hide the window when Codex exits (tray stays); `quit`: quit with Codex | `hide` |
+| `startHidden` | `true`: hidden on launch, show when Codex is detected; `false`: show on launch | `true` |
+| `detectNames` | process names to detect (any present → show the pet) | `["codex", "Codex", "opencode", "claude"]` |
+| `activeSource` | `auto`: last-active-wins across the four CLIs; `codex` / `opencode` / `claude` / `dsh`: pin to one source | `auto` |
+| `pollMs` / `debounceTicks` | process-detection poll interval / debounce ticks | `2000` / `2` |
+| `hideDelayMs` | delay (ms) before hiding after Codex exits | `5000` |
+| `scale` | pet size multiplier | `1.0` |
+| `theme` | skin (default/sakura/ocean…) | `default` |
+| `sound` / `showStatusLabel` | sound / status-label toggles | `true` |
+| `notify` | whether reminders send system notifications | `true` |
+| `breakReminderMin` | break-reminder interval (min), `0` disables | `45` |
+| `breakReminderText` | break-reminder text (customizable) | `🚶 起来活动一下，喝口水吧～` |
+| `approvalAfterMs` | Claude Code approval-heuristic timeout (ms), `0` disables | `20000` |
 
-## 目录
-
+## Directory
 
 ```
 codex-pet/
-├─ package.json       # 启动脚本 / 依赖（electron）
-├─ PROMPT.md          # 可复现的开发 Prompt（含"先问形象"要求）
-├─ config.json        # 联动模式 / 检测名 / 音效 / 皮肤 / startHidden
-├─ main.js            # Electron 主进程（透明置顶窗口、菜单、位置记忆、启停联动）
-├─ preload.js         # 安全桥接
-├─ state-watcher.js   # Codex 日志监听 + 状态机（纯 Node，可独立测试）
-├─ opencode-watcher.js# OpenCode 日志监听 + 状态机（纯 Node，可独立测试）
-├─ claude-watcher.js  # Claude Code 会话日志监听 + 状态机（纯 Node，可独立测试）
-├─ dsh-watcher.js     # DeepSeek Harness 会话日志监听 + 状态机（zstd 解压，纯 Node，可独立测试）
-├─ source-router.js   # 多源 LRU 路由（谁在干活显示谁，--test 自测）
-├─ codex-watcher.js   # 进程生命周期检测（纯 Node，--probe 可模拟）
-├─ reminders.js       # 提醒管理器（纯 Node，--test 可自测；待办 + 摸鱼）
-├─ launcher.js        # 可选守护进程（followMode=quit 时用）
-├─ assets/tray.png    # 托盘图标
+├─ package.json       # startup scripts / dependencies (electron)
+├─ PROMPT.md          # reproducible development prompt (includes "ask for character first")
+├─ config.json        # linkage mode / detected names / sound / skin / startHidden
+├─ main.js            # Electron main process (transparent always-on-top window, menu, position memory, start/stop linkage)
+├─ preload.js         # secure bridge
+├─ state-watcher.js   # Codex log listener + state machine (pure Node, independently testable)
+├─ opencode-watcher.js# OpenCode log listener + state machine (pure Node, independently testable)
+├─ claude-watcher.js  # Claude Code session-log listener + state machine (pure Node, independently testable)
+├─ dsh-watcher.js     # DeepSeek Harness session-log listener + state machine (zstd decode, pure Node, independently testable)
+├─ source-router.js   # multi-source LRU router (shows whoever is working, --test self-test)
+├─ codex-watcher.js   # process lifecycle detection (pure Node, --probe simulation)
+├─ reminders.js       # reminder manager (pure Node, --test self-test; to-do + break)
+├─ launcher.js        # optional daemon (for followMode=quit)
+├─ assets/tray.png    # tray icon
+├─ assets/gallery.png  # all-nine-states gallery (README hero image)
 └─ renderer/
-   ├─ index.html      # 桌宠窗口页面（?gallery=1 画廊调试）
+   ├─ index.html      # pet window page (?gallery=1 gallery debug)
    ├─ style.css
-   ├─ jellyfish.js    # 像素水母绘制器（可换成任意像素形象）
-   └─ pet.js          # 渲染层逻辑
+   ├─ jellyfish.js    # pixel-jellyfish renderer (swappable for any pixel character)
+   └─ pet.js          # render-layer logic
 ```
 
-## 路线图
+## Roadmap
 
-- ✅ Phase 0：像素水母 + 状态动画
-- ✅ Phase 1：Electron 透明置顶窗口 + 真实日志联动 + 拖动/菜单
-- ✅ Phase 2：音效、托盘图标、开机自启（启动文件夹 .lnk）、多皮肤
-- ✅ Phase 3（2026-08-05）：startHidden —— 开机托盘待命、仅 Codex 运行时出现；CLI 版同样联动
-- ✅ Phase 4（2026-08-08）：状态扩展 —— 动态详情（正在跑什么/改哪个文件）+ 最近活动时间线 + 详情面板
-- ✅ Phase 4（2026-08-08）：提醒功能 —— 待办提醒（持久化/系统通知/弹跳动画）+ 摸鱼提醒
-- ✅ Phase 5（2026-08-09）：OpenCode 兼容 —— 新增 `opencode-watcher.js` 并行监听 + `source-router.js` LRU 双源切换（🅒/🅞 来源标记）
-- ✅ Phase 6（2026-08-13）：Claude Code 兼容 —— 新增 `claude-watcher.js` 并行监听（`~/.claude/projects` 会话日志）+ 路由推广为三源 LRU（🄲 来源标记）+ 审批超时启发式
-- ✅ Phase 7（2026-08-14）：DeepSeek Harness 兼容 —— 新增 `dsh-watcher.js` 并行监听（`~/.dsh/sessions` 的 zstd 压缩会话日志，`fzstd` 纯 JS 解压）+ 路由推广为四源 LRU（🅓 来源标记）+ 日志新鲜度活跃检测（node 进程名不唯一，不用进程检测）
+- ✅ Phase 0: pixel jellyfish + state animations
+- ✅ Phase 1: Electron transparent always-on-top window + real log linkage + drag/menu
+- ✅ Phase 2: sound, tray icon, auto-start (Startup folder .lnk), multiple skins
+- ✅ Phase 3 (2026-08-05): startHidden — wait in tray on boot, appear only when Codex runs; CLI version linked too
+- ✅ Phase 4 (2026-08-08): status extension — live detail (what it's running / editing) + recent-activity timeline + detail panel
+- ✅ Phase 4 (2026-08-08): reminders — to-do reminders (persistent / system notification / bounce animation) + break reminder
+- ✅ Phase 5 (2026-08-09): OpenCode support — added `opencode-watcher.js` parallel listener + `source-router.js` LRU two-source switching (🅒/🅞 badges)
+- ✅ Phase 6 (2026-08-13): Claude Code support — added `claude-watcher.js` parallel listener (`~/.claude/projects` session logs) + router generalized to three-source LRU (🄲 badge) + approval timeout heuristic
+- ✅ Phase 7 (2026-08-14): DeepSeek Harness support — added `dsh-watcher.js` parallel listener (`~/.dsh/sessions` zstd-compressed session logs, `fzstd` pure-JS decode) + router generalized to four-source LRU (🅓 badge) + log-freshness presence detection (node process name isn't unique, so no process detection)
