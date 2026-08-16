@@ -16,31 +16,31 @@
 ## 运行
 
 ```bash
-cd D:\codex-pet
+git clone https://github.com/YanCiQiLi-dot/agent-pet.git
+cd agent-pet
 npm install        # 首次需要（下载 Electron）
 npm start          # 启动桌宠
 ```
 
-> 💡 **已配置开机自启**：启动文件夹里的 `Codex桌宠.lnk` 会在登录后自动拉起桌宠（`startHidden` 下先藏在托盘、不弹窗）。删除该快捷方式即可取消自启。
-> 💡 **桌面快捷方式**：桌面已固定创建 `Codex桌宠.lnk`，双击即可启动（等价 `npm start`），详见下文「桌面快捷方式」。
-> 💡 **默认只跟随 CLI 出现**（`config.json` 的 `startHidden: true`）：启动后先在托盘待命，检测到 Codex / OpenCode / Claude Code 任一进程才显示；全部退出 5 秒后自动隐藏。想恢复“启动即显示”，把 `startHidden` 改为 `false`。
+> 💡 **默认只跟随 CLI 出现**（`config.json` 的 `startHidden: true`）：启动后先在托盘待命，检测到 Codex / OpenCode / Claude Code 任一进程才显示；全部退出 5 秒后自动隐藏。想恢复”启动即显示”，把 `startHidden` 改为 `false`。
 
-### 桌面快捷方式（默认已创建）
+### 可选：桌面快捷方式与开机自启（Windows）
 
-本项目交付时会在桌面**固定创建** `Codex桌宠.lnk`，双击即可启动（等价 `npm start`），无需每次进目录敲命令。快捷方式丢失或被删除时，用下面命令一键重建：
+在项目根目录下运行下面命令，即可在桌面创建一键启动的快捷方式（等价 `npm start`）：
 
 ```powershell
+$proj    = (Resolve-Path .).Path   # 当前项目目录
 $desktop = [Environment]::GetFolderPath('Desktop')   # 自动获取真实桌面（兼容 OneDrive 重定向）
 $lnk  = Join-Path $desktop 'Codex桌宠.lnk'
 $ws   = New-Object -ComObject WScript.Shell
 $s    = $ws.CreateShortcut($lnk)
-$s.TargetPath       = 'D:\codex-pet\node_modules\electron\dist\electron.exe'
-$s.Arguments        = '"D:\codex-pet"'
-$s.WorkingDirectory = 'D:\codex-pet'
+$s.TargetPath       = Join-Path $proj 'node_modules\electron\dist\electron.exe'
+$s.Arguments        = '”' + $proj + '”'
+$s.WorkingDirectory = $proj
 $s.Save()
 ```
 
-双击桌面的 **Codex桌宠** 即可启动桌宠；删除该快捷方式不影响开机自启。
+要开机自启，把同一个快捷方式复制到启动文件夹：按 <kbd>Win</kbd>+<kbd>R</kbd>，输入 `shell:startup` 回车，把快捷方式粘贴进去即可（`startHidden: true` 时登录后先在托盘待命）。
 
 
 ## 交互

@@ -16,31 +16,31 @@ All four CLIs can run simultaneously — it shows whoever is working (LRU last-a
 ## Run
 
 ```bash
+git clone https://github.com/YanCiQiLi-dot/agent-pet.git
 cd agent-pet
 npm install        # first run only (downloads Electron)
 npm start          # launch the pet
 ```
 
-> 💡 **Auto-start on login**: a `Codex桌宠.lnk` shortcut in the Startup folder launches the pet on login (with `startHidden`, it waits in the tray without popping up). Delete the shortcut to disable.
-> 💡 **Desktop shortcut**: a `Codex桌宠.lnk` is pinned to the desktop for one-click launch (same as `npm start`). See "Desktop Shortcut" below.
-> 💡 **Follows the CLI by default** (`config.json` → `startHidden: true`): it waits in the tray and only appears when a Codex / OpenCode / Claude Code process is detected; hides 5 seconds after they all exit. Set `startHidden` to `false` to always show on launch.
+> 💡 **Follows the CLI by default** (`config.json` → `startHidden: true`): the pet waits in the tray on launch and only appears when a Codex / OpenCode / Claude Code process is detected; it hides 5 seconds after they all exit. Set `startHidden` to `false` to always show on launch.
 
-### Desktop Shortcut (optional)
+### Optional: desktop shortcut & auto-start (Windows)
 
-The project ships with a desktop shortcut `Codex桌宠.lnk` for one-click launch (equivalent to `npm start`) — no need to cd into the directory every time. If the shortcut is lost or deleted, recreate it with:
+To launch with one click (same as `npm start`), run this from the project root to create a desktop shortcut:
 
 ```powershell
+$proj    = (Resolve-Path .).Path   # current project directory
 $desktop = [Environment]::GetFolderPath('Desktop')   # auto-resolves the real desktop (handles OneDrive redirection)
 $lnk  = Join-Path $desktop 'Codex桌宠.lnk'
 $ws   = New-Object -ComObject WScript.Shell
 $s    = $ws.CreateShortcut($lnk)
-$s.TargetPath       = 'D:\codex-pet\node_modules\electron\dist\electron.exe'
-$s.Arguments        = '"D:\codex-pet"'
-$s.WorkingDirectory = 'D:\codex-pet'
+$s.TargetPath       = Join-Path $proj 'node_modules\electron\dist\electron.exe'
+$s.Arguments        = '"' + $proj + '"'
+$s.WorkingDirectory = $proj
 $s.Save()
 ```
 
-Double-click the desktop **Codex桌宠** icon to launch; deleting the shortcut does not affect auto-start on login.
+To auto-start on login, copy the same shortcut into the Startup folder: press <kbd>Win</kbd>+<kbd>R</kbd>, enter `shell:startup`, and drop a copy of the shortcut there. With `startHidden: true` it stays quietly in the tray at login.
 
 ## Interaction
 
